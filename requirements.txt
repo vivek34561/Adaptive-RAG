@@ -1,0 +1,13 @@
+langchain
+langgraph
+langchain-core
+langchain-community
+python-dotenv
+langchain-openai
+langchain-groq
+arxiv
+faiss-cpu
+wikipedia
+langgraph-cli[inmem]
+langchainhub
+langchain_text_splitters 
