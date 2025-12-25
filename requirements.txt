@@ -11,3 +11,7 @@ wikipedia
 langgraph-cli[inmem]
 langchainhub
 langchain_text_splitters 
+streamlit
+tavily-python
+sentence-transformers
+langchain-huggingface
