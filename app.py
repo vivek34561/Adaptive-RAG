@@ -5,8 +5,13 @@ st.set_page_config(page_title="Adaptive RAG Chat", layout="wide")
 
 st.title("Adaptive RAG Chat")
 
-# Sidebar for steps
+
+# Sidebar for API key and steps
 with st.sidebar:
+    st.header("Settings")
+    openai_api_key = st.text_input("OpenAI API Key", type="password", value=st.session_state.get("openai_api_key", ""))
+    if openai_api_key:
+        st.session_state["openai_api_key"] = openai_api_key
     st.header("Steps")
     steps_placeholder = st.empty()
 
@@ -23,15 +28,20 @@ for msg in st.session_state.chat_history:
 
 question = st.chat_input("Type your message...")
 
+
 if question:
     st.session_state.chat_history.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
     # Call FastAPI backend
+    headers = {}
+    if st.session_state.get("openai_api_key"):
+        headers["OPENAI_API_KEY"] = st.session_state["openai_api_key"]
     try:
         resp = requests.post(
             "http://localhost:8000/rag/answer",
             json={"question": question},
+            headers=headers,
             timeout=60
         )
         resp.raise_for_status()

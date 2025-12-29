@@ -45,8 +45,14 @@ class QuestionRequest(BaseModel):
 
 
 # Use the compiled workflow graph (app) for answering
+from fastapi import Request
+
 @app.post("/rag/answer")
-def rag_answer(request: QuestionRequest):
+def rag_answer(request: QuestionRequest, fastapi_request: Request):
+    # Get OpenAI API key from header if provided
+    user_api_key = fastapi_request.headers.get("OPENAI_API_KEY")
+    if user_api_key:
+        os.environ["OPENAI_API_KEY"] = user_api_key
     steps = []
     import builtins
     orig_print = builtins.print
