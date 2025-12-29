@@ -3,18 +3,15 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
-
-# Set embeddings
-embd = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+# Set embeddings to use OpenAI
+embd = OpenAIEmbeddings()
 
 # Docs to index
 urls = [
-    "https://lilianweng.github.io/posts/2023-06-23-agent/",
-    "https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/",
-    "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
-]
+    "https://lilianweng.github.io/posts/2023-06-23-agent/"
+    ]
 
 # Load
 docs = [WebBaseLoader(url).load() for url in urls]
@@ -26,12 +23,18 @@ text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
 )
 doc_splits = text_splitter.split_documents(docs_list)
 
-
 # Add to vectorstore
 vectorstore = FAISS.from_documents(
     documents=doc_splits,
     embedding=embd
 )
+
+
+# Index building and retriever setup
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.vectorstores import FAISS
+
 
 retriever = vectorstore.as_retriever()
 
