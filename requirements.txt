@@ -15,4 +15,5 @@ tavily-python
 fastapi
 uvicorn[standard]
 requests
+beautifulsoup4
 beautifulsoup4 
