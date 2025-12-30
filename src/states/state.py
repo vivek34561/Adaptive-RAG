@@ -20,6 +20,7 @@ class GraphState(TypedDict):
     question: str
     generation: str
     documents: List[str]
+    openai_api_key: str
 
 # Build the adaptive RAG workflow graph
 workflow = StateGraph(GraphState)

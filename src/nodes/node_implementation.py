@@ -50,23 +50,23 @@ web_search_tool = TavilySearchResults(k=3)
 def web_search(state):
     print("---WEB SEARCH---")
     question = state["question"]
+    openai_api_key = state.get("openai_api_key")
     docs = web_search_tool.invoke({"query": question})
     web_results = "\n".join([d["content"] for d in docs])
     web_doc = Document(page_content=web_results)
-    return {"documents": [web_doc], "question": question}
+    return {"documents": [web_doc], "question": question, "openai_api_key": openai_api_key}
 
 
 # Node: retrieve
 def retrieve(state):
     print("---RETRIEVE---")
     question = state["question"]
-    # Expect the OpenAI API key to be passed in the state
     openai_api_key = state.get("openai_api_key")
     if not openai_api_key:
         raise ValueError("OpenAI API key is required for embeddings.")
     retriever = get_retriever(openai_api_key)
     documents = retriever.invoke(question)
-    return {"documents": documents, "question": question}
+    return {"documents": documents, "question": question, "openai_api_key": openai_api_key}
 
 
 
@@ -74,8 +74,9 @@ def retrieve(state):
 def generate(state):
     question = state["question"]
     documents = state["documents"]
+    openai_api_key = state.get("openai_api_key")
     generation = rag_chain.invoke({"context": documents, "question": question})
-    return {"documents": documents, "question": question, "generation": generation}
+    return {"documents": documents, "question": question, "generation": generation, "openai_api_key": openai_api_key}
 
 
 # --- ADAPTIVE RAG NODES ---

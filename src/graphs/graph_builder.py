@@ -51,7 +51,15 @@ doc_splits = text_splitter.split_documents(docs_list)
 # Add to vectorstore
 
 def get_retriever(openai_api_key):
-    vectorstore = build_vectorstore_with_key(openai_api_key)
+    # Simple in-memory cache for vectorstores per API key
+    if not hasattr(get_retriever, "_cache"):
+        get_retriever._cache = {}
+    cache = get_retriever._cache
+    if openai_api_key in cache:
+        vectorstore = cache[openai_api_key]
+    else:
+        vectorstore = build_vectorstore_with_key(openai_api_key)
+        cache[openai_api_key] = vectorstore
     return vectorstore.as_retriever()
 
 def get_graph_info():
