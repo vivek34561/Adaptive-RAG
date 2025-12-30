@@ -51,8 +51,6 @@ from fastapi import Request
 def rag_answer(request: QuestionRequest, fastapi_request: Request):
     # Get OpenAI API key from header if provided
     user_api_key = fastapi_request.headers.get("OPENAI_API_KEY")
-    if user_api_key:
-        os.environ["OPENAI_API_KEY"] = user_api_key
     steps = []
     import builtins
     orig_print = builtins.print
@@ -62,8 +60,8 @@ def rag_answer(request: QuestionRequest, fastapi_request: Request):
         orig_print(*args, **kwargs)
     builtins.print = custom_print
     try:
-        # Use the compiled workflow graph from state.py (should be named 'app')
-        result = state.app.invoke({"question": request.question})
+        # Pass the OpenAI API key in the workflow state for embedding usage
+        result = state.app.invoke({"question": request.question, "openai_api_key": user_api_key})
     finally:
         builtins.print = orig_print
     answer = result.get("generation", "No answer generated.")
