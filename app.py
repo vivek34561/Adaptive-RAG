@@ -41,7 +41,7 @@ if question:
         headers["OPENAI_API_KEY"] = st.session_state["openai_api_key"]
         try:
             resp = requests.post(
-                "http://localhost:8000/rag/answer",
+                "http://localhost:8000/rag/answer" ,
                 json={"question": question},
                 headers=headers,
                 timeout=60
