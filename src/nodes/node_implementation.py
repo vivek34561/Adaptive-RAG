@@ -2,56 +2,26 @@ from src.graphs.graph_builder import get_retriever
 
 
 from src.graphs.graph_builder import get_retriever
-from src.llms.llm import rag_chain
+from src.llms.llm import make_rag_chain
 from langchain_core.documents import Document
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_openai import ChatOpenAI
-
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel, Field
-from typing import Literal
-
-# Router node
-class RouteQuery(BaseModel):
-    datasource: Literal["vectorstore", "web_search"] = Field(...)
-
-
-system = (
-    "You are an expert at routing a user question to a vectorstore or web search. "
-    "The vectorstore contains documents related to agents, prompt engineering, and adversarial attacks. "
-    "Use the vectorstore for questions on these topics. Otherwise, use web-search."
-)
-route_prompt = ChatPromptTemplate.from_messages([
-    ("system", system),
-    ("human", "{question}"),
-])
-
 def router(state):
-    question = state["question"]
-    openai_api_key = state.get("openai_api_key")
-    if not openai_api_key:
-        raise ValueError("OpenAI API key is required for routing.")
-    llm_router = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=openai_api_key)
-    structured_llm_router = llm_router.with_structured_output(RouteQuery)
-    question_router = route_prompt | structured_llm_router
-    route = question_router.invoke({"question": question})
-    if route.datasource == "web_search":
-        print("---ROUTE QUESTION---")
-        print("---ROUTE QUESTION TO WEB SEARCH---")
-        return "web_search"
-    else:
-        print("---ROUTE QUESTION---")
-        print("---ROUTE QUESTION TO RAG---")
-        return "vectorstore"
+    print("---ROUTE QUESTION---")
+    print("---ROUTE QUESTION TO RAG---")
+    return "vectorstore"
 
 # Web search node
-web_search_tool = TavilySearchResults(k=3)
 def web_search(state):
     print("---WEB SEARCH---")
+    import os
     question = state["question"]
     openai_api_key = state.get("openai_api_key")
-    docs = web_search_tool.invoke({"query": question})
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if not tavily_key:
+        print("---WEB SEARCH DISABLED: missing TAVILY_API_KEY---")
+        return {"documents": [], "question": question, "openai_api_key": openai_api_key}
+    tool = TavilySearchResults(k=3, tavily_api_key=tavily_key)
+    docs = tool.invoke({"query": question})
     web_results = "\n".join([d["content"] for d in docs])
     web_doc = Document(page_content=web_results)
     return {"documents": [web_doc], "question": question, "openai_api_key": openai_api_key}
@@ -75,7 +45,9 @@ def generate(state):
     question = state["question"]
     documents = state["documents"]
     openai_api_key = state.get("openai_api_key")
-    generation = rag_chain.invoke({"context": documents, "question": question})
+    if not openai_api_key:
+        raise ValueError("OpenAI API key is required for generation.")
+    generation = make_rag_chain(openai_api_key).invoke({"context": documents, "question": question})
     return {"documents": documents, "question": question, "generation": generation, "openai_api_key": openai_api_key}
 
 

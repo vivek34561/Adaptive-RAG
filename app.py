@@ -1,5 +1,10 @@
 import streamlit as st
-import requests
+from dotenv import load_dotenv
+
+# Load environment variables before importing workflow modules
+load_dotenv()
+
+from src.states import state
 
 st.set_page_config(page_title="Adaptive RAG Chat", layout="wide")
 
@@ -36,27 +41,28 @@ if question:
         st.session_state.chat_history.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
-        # Call FastAPI backend
-        headers = {}
-        headers["OPENAI_API_KEY"] = st.session_state["openai_api_key"]
+        # Invoke workflow directly
         try:
-            resp = requests.post(
-                "https://adaptive-rag-bffb3b0db4fc.herokuapp.com/rag/answer",
-                json={"question": question},
-                headers=headers,
-                timeout=60
-            )
-            if resp.status_code == 401 or (resp.status_code == 400 and 'invalid api key' in resp.text.lower()):
-                answer = "Error: Invalid OpenAI API Key. Please check your key and try again."
-                steps = []
-            else:
-                resp.raise_for_status()
-                data = resp.json()
-                answer = data.get("answer", "No answer returned.")
-                steps = data.get("steps", [])
+            import builtins
+            steps = []
+            orig_print = builtins.print
+            def custom_print(*args, **kwargs):
+                msg = ' '.join(str(a) for a in args)
+                steps.append(msg)
+                orig_print(*args, **kwargs)
+            builtins.print = custom_print
+            try:
+                result = state.app.invoke({
+                    "question": question,
+                    "openai_api_key": st.session_state["openai_api_key"]
+                })
+            finally:
+                builtins.print = orig_print
+            answer = result.get("generation", "No answer returned.")
         except Exception as e:
-            if "invalid api key" in str(e).lower():
-                answer = "Error: Invalid OpenAI API Key. Please check your key and try again."
+            msg = str(e)
+            if "api key" in msg.lower():
+                answer = "Error: Invalid or missing OpenAI API Key. Please check your key and try again."
             else:
                 answer = f"Error: {e}"
             steps = []

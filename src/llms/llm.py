@@ -1,7 +1,7 @@
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 # Prompt for RAG
 prompt = ChatPromptTemplate.from_messages([
@@ -16,15 +16,14 @@ prompt = ChatPromptTemplate.from_messages([
     ),
 ])
 
-# LLM
-llm = ChatGroq(model_name="openai/gpt-oss-120b", temperature=0)
+def make_rag_chain(openai_api_key: str):
+    """Construct a RAG chain bound to the provided OpenAI API key."""
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=openai_api_key)
+    return prompt | llm | StrOutputParser()
 
 # Post-processing
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-# Chain
-rag_chain = prompt | llm | StrOutputParser()
-
 def get_llm_info():
-    return {"llm": "LLM and RAG chain initialized."}
+    return {"llm": "OpenAI Chat model used via make_rag_chain(openai_api_key)."}
