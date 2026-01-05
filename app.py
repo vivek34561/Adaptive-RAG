@@ -77,4 +77,4 @@ with st.sidebar:
         st.markdown("\n".join(f"- {step}" for step in st.session_state.steps))
     else:
         st.write("No steps yet.")
-        # 
+        
