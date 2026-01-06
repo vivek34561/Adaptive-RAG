@@ -17,4 +17,4 @@ jobs:
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://vivek231:$HF_TOKEN@huggingface.co/spaces/vivek231/Advanced-Rag main
+        run: git push https://vivek231:$HF_TOKEN@huggingface.co/spaces/vivek231/Adaptive-Rag main
