@@ -14,7 +14,17 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
-      - name: Push to hub
+      - name: Sync with Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://vivek231:$HF_TOKEN@huggingface.co/spaces/vivek231/Adaptive-Rag main
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+      
+          git remote add hf https://vivek231:${HF_TOKEN}@huggingface.co/spaces/vivek231/Adaptive-Rag || true
+          git fetch hf
+      
+          git rebase hf/main --strategy-option theirs
+          git push hf main
+
+
