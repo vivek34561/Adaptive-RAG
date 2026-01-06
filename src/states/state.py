@@ -15,11 +15,12 @@ from src.nodes.node_implementation import (
 # Define the graph state structure (matching notebook)
 from typing import List
 from typing_extensions import TypedDict
+from langchain_core.documents import Document
 
 class GraphState(TypedDict):
     question: str
     generation: str
-    documents: List[str]
+    documents: List[Document]
     openai_api_key: str
 
 # Build the adaptive RAG workflow graph
