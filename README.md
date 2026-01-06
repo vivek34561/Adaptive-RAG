@@ -1,3 +1,13 @@
+---
+title: Adaptive RAG Chat
+emoji: 🧠
+colorFrom: yellow
+colorTo: red
+sdk: streamlit
+app_file: app.py
+pinned: false
+---
+
 # 🚀 Adaptive-RAG – Intelligent Retrieval-Augmented Generation System
 
 <p align="center">
@@ -186,7 +196,7 @@ pip install -r requirements.txt
 ### Run the App
 
 ```powershell
-streamlit run streamlit_app.py
+streamlit run app.py
 ```
 
 On first run:
@@ -196,20 +206,33 @@ On first run:
 
 ---
 
-## 📂 Project Structure
+## 📂 Project Structure (this repo)
 
 ```
-adaptive_rag/
-├── config.py        # Environment variables and defaults
-├── indexing.py     # FAISS index creation and loading
-├── router.py       # Vectorstore vs Web routing logic
-├── graders.py      # Retrieval & hallucination graders
-├── chains.py       # RAG prompt and query rewriter
-├── web_search.py   # Tavily search wrapper
-├── graph.py        # LangGraph workflow (build_app)
-│
-streamlit_app.py    # Streamlit UI
+.
+├── app.py                     # Streamlit UI that invokes the LangGraph workflow
+├── requirements.txt           # Python dependencies
+├── src/
+│   ├── graphs/graph_builder.py  # FAISS index + retriever setup
+│   ├── llms/llm.py              # RAG prompt and LLM chain
+│   ├── nodes/node_implementation.py # Router, retrieve, web_search, graders, transform
+│   └── states/state.py          # Graph state + compile (app)
+└── data/faiss_index/          # Vectorstore cache (created at runtime)
 ```
+
+## 🚀 Deploy to Hugging Face Spaces
+
+1. Create a new Space: choose SDK "Streamlit".
+2. Push this repository to the Space (or connect via GitHub).
+3. In the Space Settings → Secrets, add:
+  - `OPENAI_API_KEY`: your OpenAI key
+  - `TAVILY_API_KEY`: your Tavily key
+4. The app auto-builds using `requirements.txt` and runs `app.py`.
+5. Optional: users can also paste keys in the sidebar if Secrets are not set.
+
+Notes:
+- First run may build a FAISS index and cache under `src/data/faiss_index/`.
+- If web search is disabled (missing Tavily key), queries will route to the vectorstore.
 
 ---
 

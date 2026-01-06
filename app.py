@@ -15,14 +15,25 @@ st.title("Adaptive RAG Chat")
 # Sidebar for API key and steps
 with st.sidebar:
     st.header("Settings")
+    # Pre-fill from environment if available (Spaces Secrets or local .env)
+    env_openai = os.getenv("OPENAI_API_KEY", "")
+    env_tavily = os.getenv("TAVILY_API_KEY", "")
+
     openai_api_key = st.text_input("OpenAI API Key", type="password", value="")
     if openai_api_key:
         st.session_state["openai_api_key"] = openai_api_key
+    elif env_openai and not st.session_state.get("openai_api_key"):
+        st.session_state["openai_api_key"] = env_openai
+
     tavily_api_key = st.text_input("Tavily API Key", type="password", value="")
     if tavily_api_key:
         # Make available to the workflow nodes that read from env
         os.environ["TAVILY_API_KEY"] = tavily_api_key
         st.session_state["tavily_api_key"] = tavily_api_key
+    elif env_tavily and not st.session_state.get("tavily_api_key"):
+        os.environ["TAVILY_API_KEY"] = env_tavily
+        st.session_state["tavily_api_key"] = env_tavily
+
     st.header("Steps")
     steps_placeholder = st.empty()
 
@@ -42,7 +53,7 @@ question = st.chat_input("Type your message...")
 
 if question:
     if not st.session_state.get("openai_api_key"):
-        st.error("Please fill in your OpenAI API Key in the sidebar before chatting.")
+        st.error("Missing OpenAI API Key. Set it via Spaces Secrets or paste it in the sidebar.")
     else:
         st.session_state.chat_history.append({"role": "user", "content": question})
         with st.chat_message("user"):

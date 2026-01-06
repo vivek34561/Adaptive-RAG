@@ -12,8 +12,8 @@ python-dotenv
 faiss-cpu
 streamlit
 tavily-python
+openai
 fastapi
 uvicorn[standard]
 requests
 beautifulsoup4
-beautifulsoup4 
