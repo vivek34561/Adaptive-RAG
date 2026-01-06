@@ -19,9 +19,8 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
       
-          git remote add hf https://vivek231:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/vivek231/Adaptive-Rag
-      
-          git push hf main --force
+          git push https://vivek231:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/vivek231/Adaptive-Rag main --force
+
 
 
 
