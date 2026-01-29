@@ -3,7 +3,7 @@ from src.llms.llm import make_rag_chain, format_docs
 from langchain_core.documents import Document
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -13,28 +13,28 @@ def web_search(state):
     print("---WEB SEARCH---")
     import os
     question = state["question"]
-    openai_api_key = state.get("openai_api_key")
+    groq_api_key = state.get("groq_api_key")
     tavily_key = os.getenv("TAVILY_API_KEY")
     if not tavily_key:
         print("---WEB SEARCH DISABLED: missing TAVILY_API_KEY---")
-        return {"documents": [], "question": question, "openai_api_key": openai_api_key}
+        return {"documents": [], "question": question, "groq_api_key": groq_api_key}
     tool = TavilySearchResults(k=3, tavily_api_key=tavily_key)
     docs = tool.invoke({"query": question})
     web_results = "\n".join([d["content"] for d in docs])
     web_doc = Document(page_content=web_results)
-    return {"documents": [web_doc], "question": question, "openai_api_key": openai_api_key}
+    return {"documents": [web_doc], "question": question, "groq_api_key": groq_api_key}
 
 
 # Node: retrieve
 def retrieve(state):
     print("---RETRIEVE---")
     question = state["question"]
-    openai_api_key = state.get("openai_api_key")
-    if not openai_api_key:
-        raise ValueError("OpenAI API key is required for embeddings.")
-    retriever = get_retriever(openai_api_key)
+    groq_api_key = state.get("groq_api_key")
+    if not groq_api_key:
+        raise ValueError("Groq API key is required.")
+    retriever = get_retriever(groq_api_key)
     documents = retriever.invoke(question)
-    return {"documents": documents, "question": question, "openai_api_key": openai_api_key}
+    return {"documents": documents, "question": question, "groq_api_key": groq_api_key}
 
 
 
@@ -43,9 +43,9 @@ def generate(state):
     print("---GENERATE---")
     question = state["question"]
     documents = state["documents"]
-    openai_api_key = state.get("openai_api_key")
-    if not openai_api_key:
-        raise ValueError("OpenAI API key is required for generation.")
+    groq_api_key = state.get("groq_api_key")
+    if not groq_api_key:
+        raise ValueError("Groq API key is required for generation.")
     # Normalize documents to text context
     if isinstance(documents, list):
         if documents and isinstance(documents[0], Document):
@@ -57,8 +57,8 @@ def generate(state):
     else:
         context_text = str(documents)
 
-    generation = make_rag_chain(openai_api_key).invoke({"context": context_text, "question": question})
-    return {"documents": documents, "question": question, "generation": generation, "openai_api_key": openai_api_key}
+    generation = make_rag_chain(groq_api_key).invoke({"context": context_text, "question": question})
+    return {"documents": documents, "question": question, "generation": generation, "groq_api_key": groq_api_key}
 
 
 # --- ADAPTIVE RAG NODES ---
@@ -66,12 +66,12 @@ def grade_documents(state):
     print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
     question = state["question"]
     documents = state["documents"]
-    openai_api_key = state.get("openai_api_key")
+    groq_api_key = state.get("groq_api_key")
 
     class GradeDocuments(BaseModel):
         binary_score: str = Field(description="Documents are relevant to the question, 'yes' or 'no'")
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=openai_api_key)
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
     system = (
         "You are a grader assessing relevance of a retrieved document to a user question.\n "
         "If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant.\n"
@@ -92,14 +92,14 @@ def grade_documents(state):
             filtered_docs.append(d)
         else:
             print("---GRADE: DOCUMENT NOT RELEVANT---")
-    return {"documents": filtered_docs, "question": question, "openai_api_key": openai_api_key}
+    return {"documents": filtered_docs, "question": question, "groq_api_key": groq_api_key}
 
 def transform_query(state):
     print("---TRANSFORM QUERY---")
     question = state["question"]
     documents = state["documents"]
-    openai_api_key = state.get("openai_api_key")
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=openai_api_key)
+    groq_api_key = state.get("groq_api_key")
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
     system = (
         "You are a question re-writer that converts an input question to a better version optimized for vectorstore retrieval.\n "
         "Look at the input and reason about the underlying semantic intent/meaning."
@@ -110,19 +110,19 @@ def transform_query(state):
     ])
     question_rewriter = re_write_prompt | llm | StrOutputParser()
     better_question = question_rewriter.invoke({"question": question})
-    return {"documents": documents, "question": better_question, "openai_api_key": openai_api_key}
+    return {"documents": documents, "question": better_question, "groq_api_key": groq_api_key}
 
 def route_question(state):
     print("---ROUTE QUESTION---")
     question = state["question"]
-    openai_api_key = state.get("openai_api_key")
+    groq_api_key = state.get("groq_api_key")
 
     class RouteQuery(BaseModel):
         datasource: Literal["vectorstore", "web_search"] = Field(
             ..., description="Choose to route to web search or a vectorstore."
         )
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=openai_api_key)
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
     system = (
         "You are an expert at routing a user question to a vectorstore or web search."
         "The vectorstore contains documents related to agents, prompt engineering, and adversarial attacks."
@@ -156,7 +156,7 @@ def grade_generation_v_documents_and_question(state):
     question = state["question"]
     documents = state["documents"]
     generation = state["generation"]
-    openai_api_key = state.get("openai_api_key")
+    groq_api_key = state.get("groq_api_key")
 
     class GradeHallucinations(BaseModel):
         binary_score: str = Field(description="Answer is grounded in the facts, 'yes' or 'no'")
@@ -164,7 +164,7 @@ def grade_generation_v_documents_and_question(state):
     class GradeAnswer(BaseModel):
         binary_score: str = Field(description="Answer addresses the question, 'yes' or 'no'")
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=openai_api_key)
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
 
     hallucination_prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a grader assessing whether an LLM generation is grounded in a set of retrieved facts. Give 'yes' or 'no'."),
@@ -202,6 +202,5 @@ def grade_generation_v_documents_and_question(state):
 
 def get_node_info():
     return {"node": "Node functions for retrieve and generate implemented."}
-
 
 

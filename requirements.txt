@@ -2,7 +2,6 @@ langchain
 langgraph
 langchain-core
 langchain-community
-langchain-openai
 langchain-groq
 langchainhub
 langchain_text_splitters
@@ -12,8 +11,10 @@ python-dotenv
 faiss-cpu
 streamlit
 tavily-python
-openai
+beautifulsoup4
+sentence-transformers
+tiktoken
+langchain-openai
 fastapi
 uvicorn[standard]
-requests
-beautifulsoup4
+pydantic                                        

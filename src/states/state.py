@@ -21,7 +21,7 @@ class GraphState(TypedDict):
     question: str
     generation: str
     documents: List[Document]
-    openai_api_key: str
+    groq_api_key: str
 
 # Build the adaptive RAG workflow graph
 workflow = StateGraph(GraphState)

@@ -16,14 +16,14 @@ st.title("Adaptive RAG Chat")
 with st.sidebar:
     st.header("Settings")
     # Pre-fill from environment if available (Spaces Secrets or local .env)
-    env_openai = os.getenv("OPENAI_API_KEY", "")
+    env_groq = os.getenv("GROQ_API_KEY", "")
     env_tavily = os.getenv("TAVILY_API_KEY", "")
 
-    openai_api_key = st.text_input("OpenAI API Key", type="password", value="")
-    if openai_api_key:
-        st.session_state["openai_api_key"] = openai_api_key
-    elif env_openai and not st.session_state.get("openai_api_key"):
-        st.session_state["openai_api_key"] = env_openai
+    groq_api_key = st.text_input("Groq API Key", type="password", value="")
+    if groq_api_key:
+        st.session_state["groq_api_key"] = groq_api_key
+    elif env_groq and not st.session_state.get("groq_api_key"):
+        st.session_state["groq_api_key"] = env_groq
 
     tavily_api_key = st.text_input("Tavily API Key", type="password", value="")
     if tavily_api_key:
@@ -52,8 +52,8 @@ question = st.chat_input("Type your message...")
 
 
 if question:
-    if not st.session_state.get("openai_api_key"):
-        st.error("Missing OpenAI API Key. Set it via Spaces Secrets or paste it in the sidebar.")
+    if not st.session_state.get("groq_api_key"):
+        st.error("Missing Groq API Key. Set it via Spaces Secrets or paste it in the sidebar.")
     else:
         st.session_state.chat_history.append({"role": "user", "content": question})
         with st.chat_message("user"):
@@ -71,7 +71,7 @@ if question:
             try:
                 result = state.app.invoke({
                     "question": question,
-                    "openai_api_key": st.session_state["openai_api_key"]
+                    "groq_api_key": st.session_state["groq_api_key"]
                 })
             finally:
                 builtins.print = orig_print
@@ -79,7 +79,7 @@ if question:
         except Exception as e:
             msg = str(e)
             if "api key" in msg.lower():
-                answer = "Error: Invalid or missing OpenAI API Key. Please check your key and try again."
+                answer = "Error: Invalid or missing Groq API Key. Please check your key and try again."
             else:
                 answer = f"Error: {e}"
             steps = []

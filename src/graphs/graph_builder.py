@@ -3,20 +3,20 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from pathlib import Path
 import os
 
-# Set embeddings to use OpenAI
+# Set embeddings to use HuggingFace (free alternative)
 
 def _faiss_dir():
     base = Path(os.path.dirname(os.path.dirname(__file__))) / "data" / "faiss_index"
     base.mkdir(parents=True, exist_ok=True)
     return str(base)
 
-def build_vectorstore_with_key(openai_api_key):
-    # Set embeddings to use OpenAI with user-supplied key
-    embd = OpenAIEmbeddings(openai_api_key=openai_api_key)
+def build_vectorstore_with_key(groq_api_key):
+    # Set embeddings to use HuggingFace (no API key needed for embeddings)
+    embd = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
     # Docs to index
     urls = [
@@ -53,16 +53,16 @@ def build_vectorstore_with_key(openai_api_key):
     return vectorstore
 
 
-def get_retriever(openai_api_key):
-    # Simple in-memory cache for vectorstores per API key
+def get_retriever(groq_api_key):
+    # Simple in-memory cache for vectorstores (embeddings don't need API key)
     if not hasattr(get_retriever, "_cache"):
         get_retriever._cache = {}
     cache = get_retriever._cache
-    if openai_api_key in cache:
-        vectorstore = cache[openai_api_key]
+    if "vectorstore" in cache:
+        vectorstore = cache["vectorstore"]
     else:
-        vectorstore = build_vectorstore_with_key(openai_api_key)
-        cache[openai_api_key] = vectorstore
+        vectorstore = build_vectorstore_with_key(groq_api_key)
+        cache["vectorstore"] = vectorstore
     return vectorstore.as_retriever()
 
 def get_graph_info():

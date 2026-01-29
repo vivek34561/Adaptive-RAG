@@ -164,7 +164,7 @@ If retrieval is weak, the query is rewritten and re-routed automatically.
 | RAG Framework | LangChain  |
 | Vector Store  | FAISS      |
 | Web Search    | Tavily     |
-| LLM           | OpenAI     |
+| LLM           | Groq (Llama 3.3) |
 | UI            | Streamlit  |
 | Language      | Python     |
 
@@ -175,7 +175,7 @@ If retrieval is weak, the query is rewritten and re-routed automatically.
 ### Prerequisites
 
 * Python 3.10+
-* OpenAI API key
+* Groq API key
 * Tavily API key
 
 ### Environment Setup
@@ -183,7 +183,7 @@ If retrieval is weak, the query is rewritten and re-routed automatically.
 Create a `.env` file:
 
 ```
-OPENAI_API_KEY=your_openai_key
+GROQ_API_KEY=your_groq_key
 TAVILY_API_KEY=your_tavily_key
 ```
 
@@ -225,7 +225,7 @@ On first run:
 1. Create a new Space: choose SDK "Streamlit".
 2. Push this repository to the Space (or connect via GitHub).
 3. In the Space Settings → Secrets, add:
-  - `OPENAI_API_KEY`: your OpenAI key
+  - `GROQ_API_KEY`: your Groq key
   - `TAVILY_API_KEY`: your Tavily key
 4. The app auto-builds using `requirements.txt` and runs `app.py`.
 5. Optional: users can also paste keys in the sidebar if Secrets are not set.
