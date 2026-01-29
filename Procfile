@@ -1,1 +1,1 @@
-web: streamlit run app.py --server.port $PORT --server.headless true --server.runOnSave false
+web: uvicorn backend:app --host 0.0.0.0 --port $PORT
