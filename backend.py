@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import threading
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from typing import Any
@@ -17,11 +18,55 @@ from src.storage.chat_store import (
     create_session,
     get_messages,
     list_sessions,
+    update_session_title,
 )
+from langchain_groq import ChatGroq
 from src.states import state
 
 # Load .env values for local development.
 load_dotenv()
+
+
+def _generate_title_with_llm(question: str, groq_api_key: str) -> str:
+    """Call Groq LLM to produce a concise ≤6-word chat title."""
+    try:
+        llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0,
+            groq_api_key=groq_api_key,
+            max_tokens=20,
+        )
+        prompt = (
+            "Generate a concise chat title (maximum 6 words, no quotes, no punctuation at the end) "
+            f"that summarises this question: {question}"
+        )
+        response = llm.invoke(prompt)
+        title = response.content.strip().strip('"').strip("'")[:80]
+        return title if title else question[:60]
+    except Exception:
+        return question[:60] + ("…" if len(question) > 60 else "")
+
+
+def _rename_session_async(
+    session_id: str,
+    question: str,
+    groq_api_key: str,
+    memory_sessions: dict,
+) -> None:
+    """Generate an LLM title in a background thread and update the session."""
+
+    def _worker() -> None:
+        title = _generate_title_with_llm(question, groq_api_key)
+        # Update DB (best-effort)
+        try:
+            update_session_title(session_id, title)
+        except ChatStoreError:
+            pass
+        # Also update in-memory store if present
+        if session_id in memory_sessions:
+            memory_sessions[session_id]["title"] = title
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 app = FastAPI(
     title="Adaptive RAG Backend",
@@ -176,6 +221,27 @@ def new_session(payload: CreateSessionRequest) -> SessionResponse:
     return SessionResponse(**row)
 
 
+class UpdateSessionRequest(BaseModel):
+    title: str
+
+
+@app.patch("/sessions/{session_id}", response_model=SessionResponse)
+def rename_session(session_id: str, payload: UpdateSessionRequest) -> SessionResponse:
+    title = payload.title.strip()[:80] or "New chat"
+    try:
+        update_session_title(session_id, title)
+        rows = list_sessions()
+        row = next((r for r in rows if r["id"] == session_id), None)
+        if not row:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return SessionResponse(**row)
+    except ChatStoreError:
+        if session_id in _memory_sessions:
+            _memory_sessions[session_id]["title"] = title
+            return SessionResponse(**_memory_sessions[session_id])
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
 @app.get("/sessions/{session_id}/messages", response_model=list[MessageResponse])
 def session_messages(session_id: str) -> list[MessageResponse]:
     try:
@@ -191,8 +257,13 @@ def chat(payload: ChatRequest) -> ChatResponse:
         if payload.session_id:
             session_id = payload.session_id
         else:
-            created = create_session(payload.question)
+            chat_title = payload.question[:60] + ("…" if len(payload.question) > 60 else "")
+            created = create_session(chat_title)
             session_id = created["id"]
+            # Kick off LLM title generation in background (non-blocking)
+            groq_key = payload.groq_api_key or os.getenv("GROQ_API_KEY") or ""
+            if groq_key:
+                _rename_session_async(session_id, payload.question, groq_key, _memory_sessions)
     except ChatStoreError:
         use_memory_store = True
         if payload.session_id:
@@ -206,8 +277,31 @@ def chat(payload: ChatRequest) -> ChatResponse:
                 }
                 _memory_messages.setdefault(session_id, [])
         else:
-            created = _create_memory_session(payload.question)
+            chat_title = payload.question[:60] + ("…" if len(payload.question) > 60 else "")
+            created = _create_memory_session(chat_title)
             session_id = created["id"]
+            # Kick off LLM title generation in background (non-blocking)
+            groq_key = payload.groq_api_key or os.getenv("GROQ_API_KEY") or ""
+            if groq_key:
+                _rename_session_async(session_id, payload.question, groq_key, _memory_sessions)
+
+    # Fetch history before appending current message to use as context
+    chat_history_str = ""
+    if session_id:
+        if use_memory_store:
+            history_msgs = _get_memory_messages(session_id)
+        else:
+            try:
+                history_msgs = get_messages(session_id)
+            except ChatStoreError:
+                history_msgs = _get_memory_messages(session_id)
+        
+        formatted_history = []
+        for m in history_msgs[-10:]:
+            r = m.get("role", "")
+            if r in ("user", "assistant"):
+                formatted_history.append(f"{r.capitalize()}: {m.get('content', '')}")
+        chat_history_str = "\n".join(formatted_history)
 
     if use_memory_store:
         _append_memory_message(session_id=session_id, role="user", content=payload.question)
@@ -264,6 +358,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
             result = state.app.invoke(
                 {
                     "question": payload.question,
+                    "chat_history": chat_history_str,
                     "groq_api_key": groq_api_key,
                     "retrieval_attempts": 0,
                     "generation_attempts": 0,

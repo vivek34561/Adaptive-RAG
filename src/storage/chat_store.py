@@ -84,6 +84,16 @@ def list_sessions(limit: int = 50) -> list[dict[str, Any]]:
     return _fetch_all(query, (limit,))
 
 
+def update_session_title(session_id: str, title: str) -> None:
+    try:
+        _execute(
+            "update public.chat_sessions set title = %s where id = %s",
+            (title[:120], session_id),
+        )
+    except Exception as exc:
+        raise ChatStoreError(f"Failed to update session title: {exc}") from exc
+
+
 def append_message(
     session_id: str,
     role: str,

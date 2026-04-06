@@ -3,6 +3,12 @@
   "urls": [
     "https://lilianweng.github.io/posts/2023-06-23-agent/"
   ],
+  "pdf_files": [
+    {
+      "path": "documents\\RAG.pdf",
+      "mtime": "1775508228606310700"
+    }
+  ],
   "chunk_size": 500,
   "chunk_overlap": 50
 }

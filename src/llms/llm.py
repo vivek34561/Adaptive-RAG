@@ -9,6 +9,7 @@ prompt = ChatPromptTemplate.from_messages([
         "system",
         "You are a helpful assistant for question-answering. Use the provided context to answer the question. "
         "If the answer is not contained in the context, say you don't know."
+        "\n\nHere is the recent conversation history for context:\n{chat_history}"
     ),
     (
         "human",

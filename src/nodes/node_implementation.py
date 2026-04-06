@@ -73,7 +73,11 @@ def generate(state):
     else:
         context_text = str(documents)
 
-    generation = make_rag_chain(groq_api_key).invoke({"context": context_text, "question": question})
+    generation = make_rag_chain(groq_api_key).invoke({
+        "context": context_text,
+        "question": question,
+        "chat_history": state.get("chat_history", "")
+    })
     return {
         "documents": documents,
         "question": question,
@@ -136,13 +140,17 @@ def transform_query(state):
     system = (
         "You are a question re-writer that converts an input question to a better version optimized for vectorstore retrieval.\n "
         "Look at the input and reason about the underlying semantic intent/meaning."
+        "If the question references terms like 'it' or 'they', refer to the chat history to resolve them contextually."
     )
     re_write_prompt = ChatPromptTemplate.from_messages([
         ("system", system),
-        ("human", "Here is the initial question:\n\n {question} \n Formulate an improved question."),
+        ("human", "Chat History:\n{chat_history}\n\nHere is the initial question:\n\n {question} \n Formulate an improved question."),
     ])
     question_rewriter = re_write_prompt | llm | StrOutputParser()
-    better_question = question_rewriter.invoke({"question": question})
+    better_question = question_rewriter.invoke({
+        "question": question,
+        "chat_history": state.get("chat_history", "")
+    })
     return {
         "documents": documents,
         "question": better_question,
@@ -173,10 +181,13 @@ def route_question(state):
     )
     route_prompt = ChatPromptTemplate.from_messages([
         ("system", system),
-        ("human", "{question}"),
+        ("human", "Chat history:\n{chat_history}\n\nQuestion: {question}"),
     ])
     question_router = route_prompt | llm.with_structured_output(RouteQuery)
-    source = question_router.invoke({"question": question})
+    source = question_router.invoke({
+        "question": question,
+        "chat_history": state.get("chat_history", "")
+    })
     if source.datasource == "human_escalation":
         print("---ROUTE QUESTION TO HUMAN ESCALATION---")
         return "human_escalation"

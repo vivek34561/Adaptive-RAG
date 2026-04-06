@@ -9,10 +9,10 @@ import {
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
-  Paperclip,
   SendIcon,
-  XIcon,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -73,7 +73,15 @@ function MessageRow({
             : "border border-white/10 bg-white/5 text-white/90"
         )}
       >
-        {content}
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{content}</div>
+        ) : (
+          <div className="prose prose-invert prose-p:leading-relaxed prose-pre:p-0 max-w-none break-words">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content}
+            </ReactMarkdown>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -92,7 +100,8 @@ export function AnimatedAIChat() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<string[]>([]);
+  const [isExplicitNewChat, setIsExplicitNewChat] = useState(false);
+
   const { textareaRef, resize } = useAutoResizeTextarea(56);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -147,34 +156,24 @@ export function AnimatedAIChat() {
     [fetchJson]
   );
 
-  const createNewChat = useCallback(async () => {
+  const createNewChat = useCallback(() => {
     setCurrentSessionId(null);
     setMessages([]);
     setValue("");
     resize(true);
-    try {
-      const created = await fetchJson<SessionSummary>("/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "New chat" }),
-      });
-      setCurrentSessionId(created.id);
-      await loadSessions();
-      await openSession(created.id);
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Failed to create chat");
-    }
-  }, [fetchJson, loadSessions, openSession, resize]);
+    setApiError(null);
+    setIsExplicitNewChat(true);
+  }, [resize]);
 
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
 
   useEffect(() => {
-    if (!currentSessionId && !loadingSessions && sessions.length > 0 && messages.length === 0) {
+    if (!isExplicitNewChat && !currentSessionId && !loadingSessions && sessions.length > 0 && messages.length === 0) {
       void openSession(sessions[0].id);
     }
-  }, [currentSessionId, loadingSessions, sessions, messages.length, openSession]);
+  }, [isExplicitNewChat, currentSessionId, loadingSessions, sessions, messages.length, openSession]);
 
   useEffect(() => {
     const current = scrollRef.current;
@@ -231,7 +230,7 @@ export function AnimatedAIChat() {
   };
 
   return (
-    <div className="flex min-h-screen w-full overflow-hidden bg-[#0b0b0c] text-white">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-[#0b0b0c] text-white">
       <aside
         className={cn(
           "hidden shrink-0 border-r border-white/10 bg-[#111113] transition-all duration-200 md:flex",
@@ -257,7 +256,7 @@ export function AnimatedAIChat() {
 
           <button
             type="button"
-            onClick={() => void createNewChat()}
+            onClick={createNewChat}
             className={cn(
               "mt-3 flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/90 hover:bg-white/10",
               !sidebarOpen && "justify-center px-2"
@@ -310,7 +309,7 @@ export function AnimatedAIChat() {
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-6 sm:py-6">
-          <section className="flex min-h-0 flex-1 flex-col rounded-3xl border border-white/10 bg-white/[0.02]">
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02]">
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6">
               {loadingMessages && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/60">
@@ -336,38 +335,9 @@ export function AnimatedAIChat() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 shrink-0 border-t border-white/10 bg-[#0b0b0c] px-3 py-3 sm:px-6 sm:py-4">
+            <div className="shrink-0 border-t border-white/10 bg-[#0b0b0c] px-3 py-3 sm:px-6 sm:py-4">
               <div className="rounded-3xl border border-white/10 bg-[#151518] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-                {attachments.length > 0 && (
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    {attachments.map((file, index) => (
-                      <div
-                        key={`${file}-${index}`}
-                        className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/75"
-                      >
-                        <span className="truncate">{file}</span>
-                        <button
-                          type="button"
-                          onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
-                          className="text-white/45 hover:text-white"
-                        >
-                          <XIcon className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
                 <div className="flex items-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setAttachments((prev) => [...prev, `file-${Math.floor(Math.random() * 1000)}.pdf`])}
-                    className="mb-1 rounded-xl p-2 text-white/45 hover:bg-white/5 hover:text-white"
-                    aria-label="Attach file"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </button>
-
                   <textarea
                     ref={textareaRef}
                     value={value}

@@ -19,6 +19,7 @@ from langchain_core.documents import Document
 
 class GraphState(TypedDict):
     question: str
+    chat_history: str
     generation: str
     documents: List[Document]
     groq_api_key: str
