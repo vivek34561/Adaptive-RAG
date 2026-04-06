@@ -66,7 +66,7 @@ def create_session(title: str) -> dict[str, Any]:
     query = """
         insert into public.chat_sessions (title, last_message_at)
         values (%s, %s)
-        returning id, title, created_at, last_message_at
+        returning id::text as id, title, created_at::text as created_at, last_message_at::text as last_message_at
     """
     row = _fetch_one(query, (session_title, _now_iso()))
     if not row:
@@ -76,7 +76,7 @@ def create_session(title: str) -> dict[str, Any]:
 
 def list_sessions(limit: int = 50) -> list[dict[str, Any]]:
     query = """
-        select id, title, created_at, last_message_at
+        select id::text as id, title, created_at::text as created_at, last_message_at::text as last_message_at
         from public.chat_sessions
         order by last_message_at desc
         limit %s
@@ -93,7 +93,7 @@ def append_message(
     query = """
         insert into public.chat_messages (session_id, role, content, metadata)
         values (%s, %s, %s, %s::jsonb)
-        returning id, session_id, role, content, metadata, created_at
+        returning id::text as id, session_id::text as session_id, role, content, metadata, created_at::text as created_at
     """
     metadata_json = json.dumps(metadata or {})
     row = _fetch_one(query, (session_id, role, content, metadata_json))
@@ -109,7 +109,7 @@ def append_message(
 
 def get_messages(session_id: str, limit: int = 500) -> list[dict[str, Any]]:
     query = """
-        select id, session_id, role, content, metadata, created_at
+        select id::text as id, session_id::text as session_id, role, content, metadata, created_at::text as created_at
         from public.chat_messages
         where session_id = %s
         order by created_at asc
