@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -15,6 +15,7 @@ INDEX_SIGNATURE_FILE = "index_signature.json"
 INDEX_SOURCE_URLS = [
     "https://lilianweng.github.io/posts/2023-06-23-agent/",
 ]
+DOCUMENTS_DIR_NAME = "documents"
 INDEX_CHUNK_SIZE = 500
 INDEX_CHUNK_OVERLAP = 50
 
@@ -27,9 +28,36 @@ def _expected_index_signature() -> dict:
     return {
         "embedding_model": EMBEDDING_MODEL,
         "urls": INDEX_SOURCE_URLS,
+        "pdf_files": _local_pdf_signature(),
         "chunk_size": INDEX_CHUNK_SIZE,
         "chunk_overlap": INDEX_CHUNK_OVERLAP,
     }
+
+
+def _documents_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / DOCUMENTS_DIR_NAME
+
+
+def _local_pdf_files() -> list[Path]:
+    documents_dir = _documents_dir()
+    if not documents_dir.exists():
+        return []
+    return sorted(documents_dir.glob("*.pdf"))
+
+
+def _local_pdf_signature() -> list[dict[str, str]]:
+    signature: list[dict[str, str]] = []
+    for pdf_path in _local_pdf_files():
+        try:
+            signature.append(
+                {
+                    "path": str(pdf_path.relative_to(Path(__file__).resolve().parents[2])),
+                    "mtime": str(pdf_path.stat().st_mtime_ns),
+                }
+            )
+        except Exception:
+            signature.append({"path": str(pdf_path), "mtime": "unknown"})
+    return signature
 
 
 def _has_valid_signature() -> bool:
@@ -64,17 +92,29 @@ def build_vectorstore_with_key(groq_api_key):
 
     # Docs to index
     urls = INDEX_SOURCE_URLS
+    pdf_files = _local_pdf_files()
 
     # Load with a default USER_AGENT to avoid warnings
     headers = {"User-Agent": os.getenv("USER_AGENT", "Adaptive-RAG-Streamlit/1.0")}
     loader = WebBaseLoader(web_paths=urls, header_template=headers)
     docs_list = loader.load()
 
+    for pdf_path in pdf_files:
+        try:
+            pdf_loader = PyPDFLoader(str(pdf_path))
+            docs_list.extend(pdf_loader.load())
+            print(f"---PDF LOADED: {pdf_path.name}---")
+        except Exception as exc:
+            print(f"---PDF LOAD FAILED: {pdf_path.name}: {exc}---")
+
     # Split
     text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
         chunk_size=INDEX_CHUNK_SIZE, chunk_overlap=INDEX_CHUNK_OVERLAP
     )
     doc_splits = text_splitter.split_documents(docs_list)
+
+    if not doc_splits:
+        raise ValueError("No documents available to index from web sources or local PDFs.")
 
     # Add to vectorstore
     # Try to load a cached index; if not present, build and save
