@@ -1,28 +1,36 @@
 from src.graphs.graph_builder import get_retriever
 from src.llms.llm import make_rag_chain, format_docs
 from langchain_core.documents import Document
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel, Field
 from typing import Literal
 
-# Web search node
-def web_search(state):
-    print("---WEB SEARCH---")
-    import os
+def human_escalation(state):
+    print("---HUMAN ESCALATION---")
     question = state["question"]
-    groq_api_key = state.get("groq_api_key")
-    tavily_key = os.getenv("TAVILY_API_KEY")
-    if not tavily_key:
-        print("---WEB SEARCH DISABLED: missing TAVILY_API_KEY---")
-        return {"documents": [], "question": question, "groq_api_key": groq_api_key}
-    tool = TavilySearchResults(k=3, tavily_api_key=tavily_key)
-    docs = tool.invoke({"query": question})
-    web_results = "\n".join([d["content"] for d in docs])
-    web_doc = Document(page_content=web_results)
-    return {"documents": [web_doc], "question": question, "groq_api_key": groq_api_key}
+    reason = state.get("escalation_reason")
+    if not reason:
+        reason = "The query appears outside the indexed knowledge base or needs human review."
+
+    message = (
+        "I could not confidently resolve this with the current RAG context. "
+        "I have escalated this query to a human reviewer.\n\n"
+        f"Escalation reason: {reason}\n"
+        f"Original query: {question}"
+    )
+
+    return {
+        "question": question,
+        "documents": state.get("documents", []),
+        "generation": message,
+        "groq_api_key": state.get("groq_api_key"),
+        "retrieval_attempts": state.get("retrieval_attempts", 0),
+        "generation_attempts": state.get("generation_attempts", 0),
+        "escalated": True,
+        "escalation_reason": reason,
+    }
 
 
 # Node: retrieve
@@ -34,7 +42,15 @@ def retrieve(state):
         raise ValueError("Groq API key is required.")
     retriever = get_retriever(groq_api_key)
     documents = retriever.invoke(question)
-    return {"documents": documents, "question": question, "groq_api_key": groq_api_key}
+    return {
+        "documents": documents,
+        "question": question,
+        "groq_api_key": groq_api_key,
+        "retrieval_attempts": state.get("retrieval_attempts", 0),
+        "generation_attempts": state.get("generation_attempts", 0),
+        "escalated": state.get("escalated", False),
+        "escalation_reason": state.get("escalation_reason", ""),
+    }
 
 
 
@@ -58,7 +74,16 @@ def generate(state):
         context_text = str(documents)
 
     generation = make_rag_chain(groq_api_key).invoke({"context": context_text, "question": question})
-    return {"documents": documents, "question": question, "generation": generation, "groq_api_key": groq_api_key}
+    return {
+        "documents": documents,
+        "question": question,
+        "generation": generation,
+        "groq_api_key": groq_api_key,
+        "retrieval_attempts": state.get("retrieval_attempts", 0),
+        "generation_attempts": state.get("generation_attempts", 0) + 1,
+        "escalated": state.get("escalated", False),
+        "escalation_reason": state.get("escalation_reason", ""),
+    }
 
 
 # --- ADAPTIVE RAG NODES ---
@@ -92,7 +117,15 @@ def grade_documents(state):
             filtered_docs.append(d)
         else:
             print("---GRADE: DOCUMENT NOT RELEVANT---")
-    return {"documents": filtered_docs, "question": question, "groq_api_key": groq_api_key}
+    return {
+        "documents": filtered_docs,
+        "question": question,
+        "groq_api_key": groq_api_key,
+        "retrieval_attempts": state.get("retrieval_attempts", 0),
+        "generation_attempts": state.get("generation_attempts", 0),
+        "escalated": state.get("escalated", False),
+        "escalation_reason": state.get("escalation_reason", ""),
+    }
 
 def transform_query(state):
     print("---TRANSFORM QUERY---")
@@ -110,7 +143,15 @@ def transform_query(state):
     ])
     question_rewriter = re_write_prompt | llm | StrOutputParser()
     better_question = question_rewriter.invoke({"question": question})
-    return {"documents": documents, "question": better_question, "groq_api_key": groq_api_key}
+    return {
+        "documents": documents,
+        "question": better_question,
+        "groq_api_key": groq_api_key,
+        "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+        "generation_attempts": state.get("generation_attempts", 0),
+        "escalated": state.get("escalated", False),
+        "escalation_reason": state.get("escalation_reason", ""),
+    }
 
 def route_question(state):
     print("---ROUTE QUESTION---")
@@ -118,15 +159,17 @@ def route_question(state):
     groq_api_key = state.get("groq_api_key")
 
     class RouteQuery(BaseModel):
-        datasource: Literal["vectorstore", "web_search"] = Field(
-            ..., description="Choose to route to web search or a vectorstore."
+        datasource: Literal["vectorstore", "human_escalation"] = Field(
+            ..., description="Choose to route to vectorstore or human escalation."
         )
 
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
     system = (
-        "You are an expert at routing a user question to a vectorstore or web search."
+        "You are an expert router for a RAG system that can use vectorstore retrieval or escalate to humans."
         "The vectorstore contains documents related to agents, prompt engineering, and adversarial attacks."
-        "Use the vectorstore for questions on these topics. Otherwise, use web-search."
+        "Use vectorstore only for those topics."
+        "If the question is outside this scope, time-sensitive, policy-sensitive, or likely to need expert judgment,"
+        "route to human_escalation."
     )
     route_prompt = ChatPromptTemplate.from_messages([
         ("system", system),
@@ -134,9 +177,9 @@ def route_question(state):
     ])
     question_router = route_prompt | llm.with_structured_output(RouteQuery)
     source = question_router.invoke({"question": question})
-    if source.datasource == "web_search":
-        print("---ROUTE QUESTION TO WEB SEARCH---")
-        return "web_search"
+    if source.datasource == "human_escalation":
+        print("---ROUTE QUESTION TO HUMAN ESCALATION---")
+        return "human_escalation"
     else:
         print("---ROUTE QUESTION TO RAG---")
         return "vectorstore"
@@ -144,7 +187,12 @@ def route_question(state):
 def decide_to_generate(state):
     print("---ASSESS GRADED DOCUMENTS---")
     filtered_documents = state["documents"]
+    retrieval_attempts = state.get("retrieval_attempts", 0)
     if not filtered_documents:
+        if retrieval_attempts >= 1:
+            print("---DECISION: DOCUMENTS STILL NOT RELEVANT, ESCALATE TO HUMAN---")
+            state["escalation_reason"] = "No relevant documents after retrieval retries."
+            return "human_escalation"
         print("---DECISION: ALL DOCUMENTS ARE NOT RELEVANT TO QUESTION, TRANSFORM QUERY---")
         return "transform_query"
     else:
@@ -195,9 +243,15 @@ def grade_generation_v_documents_and_question(state):
             return "useful"
         else:
             print("---DECISION: GENERATION DOES NOT ADDRESS QUESTION---")
+            if state.get("generation_attempts", 0) >= 1:
+                state["escalation_reason"] = "Generated answer did not resolve the question after retry."
+                return "human_escalation"
             return "not useful"
     else:
         print("---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS, RE-TRY---")
+        if state.get("generation_attempts", 0) >= 1:
+            state["escalation_reason"] = "Answer grounding failed after retry."
+            return "human_escalation"
         return "not supported"
 
 def get_node_info():

@@ -1,0 +1,8 @@
+{
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "urls": [
+    "https://lilianweng.github.io/posts/2023-06-23-agent/"
+  ],
+  "chunk_size": 500,
+  "chunk_overlap": 50
+}

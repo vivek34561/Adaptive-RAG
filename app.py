@@ -1,23 +1,75 @@
 import os
+from typing import Any
+
+import requests
 import streamlit as st
 from dotenv import load_dotenv
 
-# Load environment variables before importing workflow modules
+# Load environment variables.
 load_dotenv()
-
-from src.states import state
 
 st.set_page_config(page_title="Adaptive RAG Chat", layout="wide")
 
 st.title("Adaptive RAG Chat")
 
+API_BASE_URL = os.getenv("BACKEND_API_URL", "http://127.0.0.1:8000").rstrip("/")
 
-# Sidebar for API key and steps
+
+def _safe_json(response: requests.Response) -> Any:
+    try:
+        return response.json()
+    except Exception:
+        return {}
+
+
+def api_get(path: str) -> Any:
+    response = requests.get(f"{API_BASE_URL}{path}", timeout=30)
+    if response.status_code >= 400:
+        body = _safe_json(response)
+        detail = body.get("detail") if isinstance(body, dict) else response.text
+        raise RuntimeError(str(detail))
+    return _safe_json(response)
+
+
+def api_post(path: str, payload: dict[str, Any]) -> Any:
+    response = requests.post(f"{API_BASE_URL}{path}", json=payload, timeout=90)
+    if response.status_code >= 400:
+        body = _safe_json(response)
+        detail = body.get("detail") if isinstance(body, dict) else response.text
+        raise RuntimeError(str(detail))
+    return _safe_json(response)
+
+
+def load_chat_history(session_id: str) -> list[dict[str, str]]:
+    items = api_get(f"/sessions/{session_id}/messages")
+    history = []
+    for item in items:
+        role = item.get("role", "assistant")
+        if role not in {"user", "assistant"}:
+            continue
+        history.append({"role": role, "content": item.get("content", "")})
+    return history
+
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "steps" not in st.session_state:
+    st.session_state.steps = []
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = None
+if "sessions" not in st.session_state:
+    st.session_state.sessions = []
+
+try:
+    st.session_state.sessions = api_get("/sessions")
+except Exception:
+    # Keep app usable even if backend session API is temporarily unavailable.
+    st.session_state.sessions = st.session_state.get("sessions", [])
+
+
 with st.sidebar:
     st.header("Settings")
-    # Pre-fill from environment if available (Spaces Secrets or local .env)
     env_groq = os.getenv("GROQ_API_KEY", "")
-    env_tavily = os.getenv("TAVILY_API_KEY", "")
 
     groq_api_key = st.text_input("Groq API Key", type="password", value="")
     if groq_api_key:
@@ -25,23 +77,39 @@ with st.sidebar:
     elif env_groq and not st.session_state.get("groq_api_key"):
         st.session_state["groq_api_key"] = env_groq
 
-    tavily_api_key = st.text_input("Tavily API Key", type="password", value="")
-    if tavily_api_key:
-        # Make available to the workflow nodes that read from env
-        os.environ["TAVILY_API_KEY"] = tavily_api_key
-        st.session_state["tavily_api_key"] = tavily_api_key
-    elif env_tavily and not st.session_state.get("tavily_api_key"):
-        os.environ["TAVILY_API_KEY"] = env_tavily
-        st.session_state["tavily_api_key"] = env_tavily
+    st.caption(f"Backend: {API_BASE_URL}")
+
+    st.header("Conversations")
+    if st.button("+ New Chat", use_container_width=True):
+        st.session_state.current_session_id = None
+        st.session_state.chat_history = []
+        st.session_state.steps = []
+        st.rerun()
+
+    for session in st.session_state.sessions:
+        session_id = session.get("id")
+        title = session.get("title") or "New chat"
+        if not session_id:
+            continue
+        pressed = st.button(
+            title[:36],
+            key=f"session_{session_id}",
+            use_container_width=True,
+        )
+        if pressed:
+            st.session_state.current_session_id = session_id
+            try:
+                st.session_state.chat_history = load_chat_history(session_id)
+                st.session_state.steps = []
+            except Exception as exc:
+                st.error(f"Failed to load history: {exc}")
+            st.rerun()
 
     st.header("Steps")
-    steps_placeholder = st.empty()
-
-# Chat history in session state
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "steps" not in st.session_state:
-    st.session_state.steps = []
+    if st.session_state.steps:
+        st.markdown("\n".join(f"- {step}" for step in st.session_state.steps))
+    else:
+        st.write("No steps yet.")
 
 # Chat UI
 for msg in st.session_state.chat_history:
@@ -58,24 +126,27 @@ if question:
         st.session_state.chat_history.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
-        # Invoke workflow directly
+
         try:
-            import builtins
-            steps = []
-            orig_print = builtins.print
-            def custom_print(*args, **kwargs):
-                msg = ' '.join(str(a) for a in args)
-                steps.append(msg)
-                orig_print(*args, **kwargs)
-            builtins.print = custom_print
+            payload = {
+                "question": question,
+                "groq_api_key": st.session_state["groq_api_key"],
+                "session_id": st.session_state.current_session_id,
+            }
+            result = api_post("/chat", payload)
+
+            st.session_state.current_session_id = result.get("session_id")
+            answer = result.get("answer", "No answer returned.")
+            steps = result.get("steps", [])
+            escalated = result.get("escalated", False)
+            reason = result.get("escalation_reason")
+            if escalated and reason:
+                answer = f"{answer}\n\nEscalation reason: {reason}"
+
             try:
-                result = state.app.invoke({
-                    "question": question,
-                    "groq_api_key": st.session_state["groq_api_key"]
-                })
-            finally:
-                builtins.print = orig_print
-            answer = result.get("generation", "No answer returned.")
+                st.session_state.sessions = api_get("/sessions")
+            except Exception:
+                pass
         except Exception as e:
             msg = str(e)
             if "api key" in msg.lower():
@@ -87,11 +158,4 @@ if question:
         st.session_state.steps = steps
         with st.chat_message("assistant"):
             st.markdown(answer)
-
-# Update steps sidebar
-with st.sidebar:
-    if st.session_state.steps:
-        st.markdown("\n".join(f"- {step}" for step in st.session_state.steps))
-    else:
-        st.write("No steps yet.")
         

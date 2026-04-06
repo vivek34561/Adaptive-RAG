@@ -1,11 +1,55 @@
 
 # Index building and retriever setup
+import json
+import os
+from pathlib import Path
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-from pathlib import Path
-import os
+
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+INDEX_SIGNATURE_FILE = "index_signature.json"
+INDEX_SOURCE_URLS = [
+    "https://lilianweng.github.io/posts/2023-06-23-agent/",
+]
+INDEX_CHUNK_SIZE = 500
+INDEX_CHUNK_OVERLAP = 50
+
+
+def _index_signature_path() -> Path:
+    return Path(_faiss_dir()) / INDEX_SIGNATURE_FILE
+
+
+def _expected_index_signature() -> dict:
+    return {
+        "embedding_model": EMBEDDING_MODEL,
+        "urls": INDEX_SOURCE_URLS,
+        "chunk_size": INDEX_CHUNK_SIZE,
+        "chunk_overlap": INDEX_CHUNK_OVERLAP,
+    }
+
+
+def _has_valid_signature() -> bool:
+    signature_path = _index_signature_path()
+    if not signature_path.exists():
+        return False
+
+    try:
+        current_signature = json.loads(signature_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    return current_signature == _expected_index_signature()
+
+
+def _write_signature() -> None:
+    _index_signature_path().write_text(
+        json.dumps(_expected_index_signature(), indent=2),
+        encoding="utf-8",
+    )
 
 # Set embeddings to use HuggingFace (free alternative)
 
@@ -16,12 +60,10 @@ def _faiss_dir():
 
 def build_vectorstore_with_key(groq_api_key):
     # Set embeddings to use HuggingFace (no API key needed for embeddings)
-    embd = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embd = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
     # Docs to index
-    urls = [
-        "https://lilianweng.github.io/posts/2023-06-23-agent/"
-    ]
+    urls = INDEX_SOURCE_URLS
 
     # Load with a default USER_AGENT to avoid warnings
     headers = {"User-Agent": os.getenv("USER_AGENT", "Adaptive-RAG-Streamlit/1.0")}
@@ -30,26 +72,34 @@ def build_vectorstore_with_key(groq_api_key):
 
     # Split
     text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=500, chunk_overlap=50
+        chunk_size=INDEX_CHUNK_SIZE, chunk_overlap=INDEX_CHUNK_OVERLAP
     )
     doc_splits = text_splitter.split_documents(docs_list)
 
     # Add to vectorstore
     # Try to load a cached index; if not present, build and save
     index_dir = _faiss_dir()
-    try:
-        vectorstore = FAISS.load_local(index_dir, embd, allow_dangerous_deserialization=True)
-        print("---VECTORSTORE LOADED FROM DISK---")
-    except Exception:
-        vectorstore = FAISS.from_documents(
-            documents=doc_splits,
-            embedding=embd
-        )
+    if _has_valid_signature():
         try:
-            vectorstore.save_local(index_dir)
-            print("---VECTORSTORE SAVED TO DISK---")
+            vectorstore = FAISS.load_local(index_dir, embd, allow_dangerous_deserialization=True)
+            print("---VECTORSTORE LOADED FROM DISK---")
+            return vectorstore
         except Exception:
-            print("---VECTORSTORE SAVE SKIPPED---")
+            print("---VECTORSTORE LOAD FAILED: REBUILDING---")
+    else:
+        print("---VECTORSTORE SIGNATURE MISMATCH: REBUILDING---")
+
+    vectorstore = FAISS.from_documents(
+        documents=doc_splits,
+        embedding=embd
+    )
+    try:
+        vectorstore.save_local(index_dir)
+        _write_signature()
+        print("---VECTORSTORE SAVED TO DISK---")
+    except Exception:
+        print("---VECTORSTORE SAVE SKIPPED---")
+
     return vectorstore
 
 

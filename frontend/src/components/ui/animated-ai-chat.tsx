@@ -4,7 +4,12 @@ import { useEffect, useRef, useCallback, useTransition } from "react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
+  Clock3,
   ImageIcon,
+  MessageSquarePlus,
+  MessagesSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   PenTool,
   MonitorIcon,
   Command,
@@ -77,6 +82,22 @@ interface ChatMessage {
   content: string;
 }
 
+interface SessionSummary {
+  id: string;
+  title: string;
+  created_at?: string;
+  last_message_at?: string;
+}
+
+interface ServerMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+}
+
 interface TextareaProps
   extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   containerClassName?: string;
@@ -108,12 +129,6 @@ const COMMAND_SUGGESTIONS: CommandSuggestion[] = [
     description: "Improve existing UI design",
     prefix: "/improve",
   },
-];
-
-const UNSPLASH_IMAGES = [
-  "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1504639725590-34d0984388bd?auto=format&fit=crop&w=900&q=80",
 ];
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
@@ -169,11 +184,98 @@ export function AnimatedAIChat() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [inputFocused, setInputFocused] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 60,
     maxHeight: 200,
   });
   const commandPaletteRef = useRef<HTMLDivElement>(null);
+
+  const fetchJson = useCallback(
+    async <T,>(path: string, init?: RequestInit): Promise<T> => {
+      const response = await fetch(`${apiBaseUrl}${path}`, init);
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.detail || "Request failed");
+      }
+      return (await response.json()) as T;
+    },
+    [apiBaseUrl]
+  );
+
+  const refreshSessions = useCallback(async () => {
+    setIsLoadingSessions(true);
+    try {
+      const data = await fetchJson<SessionSummary[]>("/sessions");
+      setSessions(data);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load sessions";
+      setApiError(message);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  }, [fetchJson]);
+
+  const openSession = useCallback(
+    async (sessionId: string) => {
+      setCurrentSessionId(sessionId);
+      setIsLoadingMessages(true);
+      setApiError(null);
+      try {
+        const data = await fetchJson<ServerMessage[]>(
+          `/sessions/${sessionId}/messages`
+        );
+        const normalized = data
+          .filter((item) => item.role === "user" || item.role === "assistant")
+          .map((item) => ({
+            role: item.role as "user" | "assistant",
+            content: item.content,
+          }));
+        setMessages(normalized);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to load messages";
+        setApiError(message);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    },
+    [fetchJson]
+  );
+
+  const createNewChat = useCallback(async () => {
+    setApiError(null);
+    setMessages([]);
+    setCurrentSessionId(null);
+    try {
+      const created = await fetchJson<SessionSummary>("/sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title: "New chat" }),
+      });
+      setCurrentSessionId(created.id);
+      await refreshSessions();
+    } catch {
+      // If backend does not support explicit create, first /chat call will create it.
+    }
+  }, [fetchJson, refreshSessions]);
+
+  useEffect(() => {
+    void refreshSessions();
+  }, [refreshSessions]);
+
+  useEffect(() => {
+    if (!currentSessionId && sessions.length > 0 && messages.length === 0) {
+      void openSession(sessions[0].id);
+    }
+  }, [currentSessionId, sessions, messages.length, openSession]);
 
   useEffect(() => {
     if (value.startsWith("/") && !value.includes(" ")) {
@@ -272,22 +374,24 @@ export function AnimatedAIChat() {
     startTransition(async () => {
       setIsTyping(true);
       try {
-        const response = await fetch(`${apiBaseUrl}/chat`, {
+        const data = await fetchJson<{
+          session_id?: string;
+          answer?: string;
+        }>("/chat", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
             question,
+            session_id: currentSessionId,
           }),
         });
 
-        if (!response.ok) {
-          const errorBody = await response.json().catch(() => null);
-          throw new Error(errorBody?.detail || "Failed to fetch response");
+        if (data.session_id && data.session_id !== currentSessionId) {
+          setCurrentSessionId(data.session_id);
         }
 
-        const data = (await response.json()) as { answer?: string };
         setMessages((prev) => [
           ...prev,
           {
@@ -295,6 +399,7 @@ export function AnimatedAIChat() {
             content: data.answer || "No answer returned.",
           },
         ]);
+        await refreshSessions();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unexpected API error";
@@ -332,59 +437,124 @@ export function AnimatedAIChat() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-transparent p-6 text-white">
+    <div className="relative min-h-screen w-full overflow-hidden bg-transparent text-white">
       <div className="absolute inset-0 h-full w-full overflow-hidden">
         <div className="absolute left-1/4 top-0 h-96 w-96 animate-pulse rounded-full bg-violet-500/10 blur-[128px]" />
         <div className="absolute bottom-0 right-1/4 h-96 w-96 animate-pulse rounded-full bg-indigo-500/10 blur-[128px] delay-700" />
         <div className="absolute right-1/3 top-1/4 h-64 w-64 animate-pulse rounded-full bg-fuchsia-500/10 blur-[96px] delay-1000" />
       </div>
-      <div className="relative mx-auto w-full max-w-2xl">
+      <div className="relative z-10 flex min-h-screen w-full">
+        <aside
+          className={cn(
+            "border-r border-white/10 bg-black/25 backdrop-blur-xl transition-all duration-300",
+            isSidebarOpen ? "w-72 p-3" : "w-0 overflow-hidden p-0"
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-white/80">
+              <MessagesSquare className="h-4 w-4" />
+              <span>Conversations</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(false)}
+              className="rounded-md p-1 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void createNewChat()}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm text-white/90 transition-colors hover:bg-white/15"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            New chat
+          </button>
+
+          <div className="mt-4 space-y-2">
+            {isLoadingSessions && (
+              <div className="text-xs text-white/50">Loading conversations...</div>
+            )}
+            {sessions.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => void openSession(session.id)}
+                className={cn(
+                  "w-full rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                  "border border-transparent hover:border-white/15",
+                  currentSessionId === session.id
+                    ? "bg-white/14 text-white"
+                    : "bg-white/5 text-white/75"
+                )}
+              >
+                <div className="truncate">{session.title || "New chat"}</div>
+                <div className="mt-1 flex items-center gap-1 text-[11px] text-white/45">
+                  <Clock3 className="h-3 w-3" />
+                  <span className="truncate">
+                    {session.last_message_at
+                      ? new Date(session.last_message_at).toLocaleString()
+                      : "No activity"}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 items-center justify-center p-6">
+          {!isSidebarOpen && (
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="absolute left-3 top-3 z-20 rounded-md bg-black/40 p-2 text-white/70 transition-colors hover:text-white"
+              aria-label="Expand sidebar"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          )}
+
+          <div className="mx-auto w-full max-w-2xl">
         <motion.div
           className="relative z-10 space-y-8"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
         >
-          <div className="space-y-3 text-center">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-              className="inline-block"
-            >
-              <h1 className="bg-gradient-to-r from-white/90 to-white/40 bg-clip-text pb-1 text-3xl font-medium tracking-tight text-transparent">
-                How can I help today?
-              </h1>
+          {messages.length === 0 && (
+            <div className="space-y-3 text-center">
               <motion.div
-                className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: "100%", opacity: 1 }}
-                transition={{ delay: 0.5, duration: 0.8 }}
-              />
-            </motion.div>
-            <motion.p
-              className="text-sm text-white/40"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
-              Type a command or ask a question
-            </motion.p>
-            {recentCommand && (
-              <p className="text-xs text-white/60">Recent command: {recentCommand}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2">
-            {UNSPLASH_IMAGES.map((url) => (
-              <img
-                key={url}
-                src={url}
-                alt="Unsplash sample"
-                className="h-16 w-full rounded-md object-cover opacity-80"
-              />
-            ))}
-          </div>
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.5 }}
+                className="inline-block"
+              >
+                <h1 className="bg-gradient-to-r from-white/90 to-white/40 bg-clip-text pb-1 text-3xl font-medium tracking-tight text-transparent">
+                  How can I help today?
+                </h1>
+                <motion.div
+                  className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: "100%", opacity: 1 }}
+                  transition={{ delay: 0.5, duration: 0.8 }}
+                />
+              </motion.div>
+              <motion.p
+                className="text-sm text-white/40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                Type a command or ask a question
+              </motion.p>
+              {recentCommand && (
+                <p className="text-xs text-white/60">Recent command: {recentCommand}</p>
+              )}
+            </div>
+          )}
 
           <AnimatePresence>
             {messages.length > 0 && (
@@ -410,6 +580,12 @@ export function AnimatedAIChat() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {isLoadingMessages && (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/60">
+              Loading conversation...
+            </div>
+          )}
 
           <motion.div
             className="relative rounded-2xl border border-white/[0.05] bg-white/[0.02] shadow-2xl backdrop-blur-2xl"
@@ -578,35 +754,9 @@ export function AnimatedAIChat() {
               </div>
             )}
           </motion.div>
-
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {COMMAND_SUGGESTIONS.map((suggestion, index) => (
-              <motion.button
-                key={suggestion.prefix}
-                onClick={() => selectCommandSuggestion(index)}
-                className="group relative flex items-center gap-2 rounded-lg bg-white/[0.02] px-3 py-2 text-sm text-white/60 transition-all hover:bg-white/[0.05] hover:text-white/90"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                {suggestion.icon}
-                <span>{suggestion.label}</span>
-                <motion.div
-                  className="absolute inset-0 rounded-lg border border-white/[0.05]"
-                  initial={false}
-                  animate={{
-                    opacity: [0, 1],
-                    scale: [0.98, 1],
-                  }}
-                  transition={{
-                    duration: 0.3,
-                    ease: "easeOut",
-                  }}
-                />
-              </motion.button>
-            ))}
-          </div>
         </motion.div>
+          </div>
+        </div>
       </div>
 
       <AnimatePresence>

@@ -2,7 +2,7 @@
 
 from langgraph.graph import END, StateGraph, START
 from src.nodes.node_implementation import (
-    web_search,
+    human_escalation,
     retrieve,
     grade_documents,
     generate,
@@ -22,12 +22,16 @@ class GraphState(TypedDict):
     generation: str
     documents: List[Document]
     groq_api_key: str
+    retrieval_attempts: int
+    generation_attempts: int
+    escalated: bool
+    escalation_reason: str
 
 # Build the adaptive RAG workflow graph
 workflow = StateGraph(GraphState)
 
 # Define the nodes
-workflow.add_node("web_search", web_search)  # web search
+workflow.add_node("human_escalation", human_escalation)  # human escalation
 workflow.add_node("retrieve", retrieve)  # retrieve
 workflow.add_node("grade_documents", grade_documents)  # grade documents
 workflow.add_node("generate", generate)  # generate
@@ -38,11 +42,11 @@ workflow.add_conditional_edges(
     START,
     route_question,
     {
-        "web_search": "web_search",
+        "human_escalation": "human_escalation",
         "vectorstore": "retrieve",
     },
 )
-workflow.add_edge("web_search", "generate")
+workflow.add_edge("human_escalation", END)
 workflow.add_edge("retrieve", "grade_documents")
 workflow.add_conditional_edges(
     "grade_documents",
@@ -50,6 +54,7 @@ workflow.add_conditional_edges(
     {
         "transform_query": "transform_query",
         "generate": "generate",
+        "human_escalation": "human_escalation",
     },
 )
 workflow.add_edge("transform_query", "retrieve")
@@ -60,6 +65,7 @@ workflow.add_conditional_edges(
         "not supported": "generate",
         "useful": END,
         "not useful": "transform_query",
+        "human_escalation": "human_escalation",
     },
 )
 

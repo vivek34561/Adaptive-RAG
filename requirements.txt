@@ -18,3 +18,5 @@ langchain-openai
 fastapi
 uvicorn[standard]
 pydantic                                        
+requests
+psycopg[binary]
