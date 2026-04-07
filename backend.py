@@ -587,3 +587,10 @@ async def chat_stream(payload: ChatRequest):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    port = int(os.getenv("PORT", "8002"))
+    print(f"---STARTING BACKEND ON PORT {port}---")
+    uvicorn.run(app, host="0.0.0.0", port=port)
