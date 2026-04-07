@@ -19,7 +19,7 @@ prompt = ChatPromptTemplate.from_messages([
 
 def make_rag_chain(groq_api_key: str):
     """Construct a RAG chain bound to the provided Groq API key."""
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
+    llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0, groq_api_key=groq_api_key)
     return prompt | llm | StrOutputParser()
 
 # Post-processing
@@ -27,4 +27,4 @@ def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
 def get_llm_info():
-    return {"llm": "Groq Chat model (llama-3.3-70b-versatile) used via make_rag_chain(groq_api_key)."}
+    return {"llm": "Groq Chat model (openai/gpt-oss-20b) used via make_rag_chain(groq_api_key)."}

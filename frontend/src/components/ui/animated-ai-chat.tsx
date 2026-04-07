@@ -17,6 +17,7 @@ import remarkGfm from "remark-gfm";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  status?: string;
 }
 
 interface SessionSummary {
@@ -58,9 +59,11 @@ function useAutoResizeTextarea(minHeight: number) {
 function MessageRow({
   role,
   content,
+  status,
 }: {
   role: "user" | "assistant";
   content: string;
+  status?: string;
 }) {
   const isUser = role === "user";
   return (
@@ -76,10 +79,20 @@ function MessageRow({
         {isUser ? (
           <div className="whitespace-pre-wrap">{content}</div>
         ) : (
-          <div className="prose prose-invert prose-p:leading-relaxed prose-pre:p-0 max-w-none break-words">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {content}
-            </ReactMarkdown>
+          <div className="flex flex-col gap-2">
+            {!content && status && (
+              <div className="flex items-center gap-2 text-[13px] text-white/50 animate-pulse">
+                <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
+                {status}
+              </div>
+            )}
+            {content && (
+              <div className="prose prose-invert prose-p:leading-relaxed prose-pre:p-0 max-w-none break-words">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {content}
+                </ReactMarkdown>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -236,6 +249,12 @@ export function AnimatedAIChat() {
                   if (data.session_id && data.session_id !== currentSessionId) {
                     setCurrentSessionId(data.session_id);
                   }
+                } else if (data.type === 'status') {
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    newMessages[newMessages.length - 1].status = data.content;
+                    return newMessages;
+                  });
                 } else if (data.type === 'content') {
                   streamedResponse += data.content;
                   setMessages((prev) => {
@@ -384,7 +403,7 @@ export function AnimatedAIChat() {
 
               <div className="space-y-4">
                 {messages.map((message, index) => (
-                  <MessageRow key={`${message.role}-${index}`} role={message.role} content={message.content} />
+                  <MessageRow key={`${message.role}-${index}`} role={message.role} content={message.content} status={message.status} />
                 ))}
               </div>
             </div>

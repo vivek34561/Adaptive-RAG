@@ -100,7 +100,7 @@ def grade_documents(state):
     class GradeDocuments(BaseModel):
         binary_score: str = Field(description="Documents are relevant to the question, 'yes' or 'no'")
 
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0, groq_api_key=groq_api_key)
     system = (
         "You are a grader assessing relevance of a retrieved document to a user question.\n "
         "If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant.\n"
@@ -136,7 +136,7 @@ def transform_query(state):
     question = state["question"]
     documents = state["documents"]
     groq_api_key = state.get("groq_api_key")
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0, groq_api_key=groq_api_key)
     system = (
         "You are a question re-writer that converts an input question to a better version optimized for vectorstore retrieval.\n "
         "Look at the input and reason about the underlying semantic intent/meaning."
@@ -171,7 +171,7 @@ def route_question(state):
             ..., description="Choose to route to vectorstore or human escalation."
         )
 
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0, groq_api_key=groq_api_key)
     system = (
         "You are an expert router for a RAG system that can use vectorstore retrieval or escalate to humans."
         "The vectorstore contains documents related to agents, prompt engineering, and adversarial attacks."
@@ -223,7 +223,7 @@ def grade_generation_v_documents_and_question(state):
     class GradeAnswer(BaseModel):
         binary_score: str = Field(description="Answer addresses the question, 'yes' or 'no'")
 
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, groq_api_key=groq_api_key)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0, groq_api_key=groq_api_key)
 
     hallucination_prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a grader assessing whether an LLM generation is grounded in a set of retrieved facts. Give 'yes' or 'no'."),

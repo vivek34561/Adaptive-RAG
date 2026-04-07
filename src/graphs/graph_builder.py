@@ -153,7 +153,7 @@ def get_retriever(groq_api_key):
     else:
         vectorstore = build_vectorstore_with_key(groq_api_key)
         cache["vectorstore"] = vectorstore
-    return vectorstore.as_retriever()
+    return vectorstore.as_retriever(search_kwargs={"k": 2})
 
 def get_graph_info():
     return {"graph": "Vectorstore and retriever initialized."}

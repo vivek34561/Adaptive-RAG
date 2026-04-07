@@ -34,7 +34,7 @@ def _generate_title_with_llm(question: str, groq_api_key: str) -> str:
     """Call Groq LLM to produce a concise ≤6-word chat title."""
     try:
         llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-20b",
             temperature=0,
             groq_api_key=groq_api_key,
             max_tokens=20,
@@ -200,7 +200,7 @@ def health() -> dict[str, str]:
 @app.get("/models")
 def models() -> dict[str, Any]:
     return {
-        "llm": "llama-3.3-70b-versatile",
+        "llm": "openai/gpt-oss-20b",
         "embedding": "sentence-transformers/all-MiniLM-L6-v2",
         "routing": ["vectorstore", "human_escalation"],
     }
@@ -523,12 +523,25 @@ async def chat_stream(payload: ChatRequest):
                 },
                 version="v1"
             ):
-                if event["event"] == "on_chat_model_stream":
+                if event["event"] == "on_chain_start":
+                    node_name = event.get("name")
+                    status_map = {
+                        "route_question": "Routing your question...",
+                        "retrieve": "Searching knowledge base...",
+                        "grade_documents": "Evaluating document relevance...",
+                        "transform_query": "Re-writing query for better search...",
+                        "generate": "Generating answer...",
+                        "grade_generation_v_documents_and_question": "Double-checking answer..."
+                    }
+                    if node_name in status_map:
+                        yield f"data: {json.dumps({'type': 'status', 'content': status_map[node_name]})}\n\n"
+                        
+                elif event["event"] == "on_chat_model_stream":
                     chunk = event["data"]["chunk"].content
                     if chunk:
                         full_answer += chunk
                         yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
-                        await asyncio.sleep(0.03)
+                        await asyncio.sleep(0.01)
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             
