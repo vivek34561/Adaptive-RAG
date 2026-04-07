@@ -24,8 +24,19 @@ from src.storage.chat_store import (
     update_session_title,
     log_escalation,
 )
-from langchain_groq import ChatGroq
-from src.states import state
+# NOTE: Heavy imports (langchain_groq, src.states.state) are loaded LAZILY
+# to ensure the FastAPI server binds to the port immediately on startup.
+# This prevents Render's port-scan timeout.
+
+_rag_app_cache = None
+
+def _get_rag_app():
+    """Lazy-load the LangGraph RAG app (heavy imports: PyTorch, sentence-transformers)."""
+    global _rag_app_cache
+    if _rag_app_cache is None:
+        from src.states import state
+        _rag_app_cache = state.app
+    return _rag_app_cache
 
 # Load .env values for local development.
 load_dotenv()
@@ -34,6 +45,7 @@ load_dotenv()
 def _generate_title_with_llm(question: str, groq_api_key: str) -> str:
     """Call Groq LLM to produce a concise ≤6-word chat title."""
     try:
+        from langchain_groq import ChatGroq
         llm = ChatGroq(
             model="openai/gpt-oss-20b",
             temperature=0,
@@ -359,7 +371,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
     execution_buffer = io.StringIO()
     try:
         with redirect_stdout(execution_buffer):
-            result = state.app.invoke(
+            result = _get_rag_app().invoke(
                 {
                     "question": payload.question,
                     "chat_history": chat_history_str,
@@ -518,7 +530,7 @@ async def chat_stream(payload: ChatRequest):
             
         full_answer = ""
         try:
-            async for event in state.app.astream_events(
+            async for event in _get_rag_app().astream_events(
                 {
                     "question": payload.question,
                     "chat_history": chat_history_str,
