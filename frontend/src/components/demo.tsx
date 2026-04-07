@@ -1,4 +1,4 @@
-import { AnimatedAIChat } from "@/components/ui/animated-ai-chat";
+import { AnimatedAIChat } from "./ui/animated-ai-chat";
 
 export function Demo() {
   return (
