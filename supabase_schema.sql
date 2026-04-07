@@ -42,3 +42,20 @@ for select using (true);
 
 create policy if not exists "Allow write messages" on public.chat_messages
 for insert with check (true);
+
+create table if not exists public.escalated_conversations (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.chat_sessions(id) on delete cascade,
+  question text not null,
+  chat_history jsonb not null default '[]'::jsonb,
+  escalation_reason text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.escalated_conversations enable row level security;
+
+create policy if not exists "Allow read escalated" on public.escalated_conversations
+for select using (true);
+
+create policy if not exists "Allow write escalated" on public.escalated_conversations
+for insert with check (true);

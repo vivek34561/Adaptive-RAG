@@ -22,6 +22,7 @@ from src.storage.chat_store import (
     get_messages,
     list_sessions,
     update_session_title,
+    log_escalation,
 )
 from langchain_groq import ChatGroq
 from src.states import state
@@ -377,7 +378,13 @@ def chat(payload: ChatRequest) -> ChatResponse:
     steps = [line.strip() for line in execution_buffer.getvalue().splitlines() if line.strip()]
     documents = result.get("documents") or []
     escalated = bool(result.get("escalated", False))
-    escalation_reason = result.get("escalation_reason") or None
+    escalation_reason = result.get("escalation_reason") or "Unknown reason"
+
+    if escalated and not use_memory_store:
+        try:
+            log_escalation(session_id, payload.question, chat_history_str, escalation_reason)
+        except ChatStoreError:
+            pass
 
     answer = result.get("generation", "No answer returned.")
 
@@ -542,11 +549,32 @@ async def chat_stream(payload: ChatRequest):
                         full_answer += chunk
                         yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
                         await asyncio.sleep(0.01)
+                elif event["event"] == "on_chain_end" and event.get("name") == "human_escalation":
+                    output = event["data"].get("output", {})
+                    
+                    if not use_memory_store:
+                        try:
+                            log_escalation(
+                                session_id,
+                                payload.question,
+                                chat_history_str,
+                                output.get("escalation_reason", "Reason not specified")
+                            )
+                        except ChatStoreError:
+                            pass
+                            
+                    if isinstance(output, dict) and "generation" in output:
+                        chunk = output["generation"]
+                        if chunk:
+                            full_answer += chunk
+                            yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+                            await asyncio.sleep(0.01)
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             
         if not full_answer:
-            full_answer = "No answer returned."
+            full_answer = "This query is out of context. Your query has been escalated to a human reviewer."
+            yield f"data: {json.dumps({'type': 'content', 'content': full_answer})}\n\n"
             
         if use_memory_store:
             _append_memory_message(session_id=session_id, role="assistant", content=full_answer)

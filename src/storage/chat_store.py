@@ -126,3 +126,21 @@ def get_messages(session_id: str, limit: int = 500) -> list[dict[str, Any]]:
         limit %s
     """
     return _fetch_all(query, (session_id, limit))
+
+
+def log_escalation(
+    session_id: str,
+    question: str,
+    chat_history_str: str,
+    escalation_reason: str,
+) -> dict[str, Any]:
+    query = """
+        insert into public.escalated_conversations (session_id, question, chat_history, escalation_reason)
+        values (%s, %s, %s::jsonb, %s)
+        returning id::text as id
+    """
+    history_json = json.dumps([{"history": chat_history_str}])
+    row = _fetch_one(query, (session_id, question, history_json, escalation_reason))
+    if not row:
+        raise ChatStoreError("Failed to log escalation.")
+    return row
