@@ -3,8 +3,7 @@ title: Adaptive RAG Chat
 emoji: 🧠
 colorFrom: yellow
 colorTo: red
-sdk: streamlit
-app_file: app.py
+sdk: docker
 pinned: false
 ---
 
@@ -14,7 +13,8 @@ pinned: false
   <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python"/>
   <img src="https://img.shields.io/badge/LangGraph-latest-green.svg" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/LangChain-latest-yellow.svg" alt="LangChain"/>
-  <img src="https://img.shields.io/badge/Streamlit-UI-red.svg" alt="Streamlit"/>
+   <img src="https://img.shields.io/badge/FastAPI-latest-009688.svg" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/Next.js-latest-black.svg" alt="Next.js"/>
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"/>
 </p>
 
@@ -88,7 +88,7 @@ LangGraph is ideal for building **conditional, feedback-driven RAG workflows** i
   Uses LangGraph for explicit decision-making and retry loops.
 
 * **Interactive UI**
-  Streamlit app for real-time querying and visualization.
+  Modern Next.js dashboard for real-time streaming chat and visualization.
 
 ---
 
@@ -165,7 +165,8 @@ If retrieval is weak, the query is rewritten and re-routed automatically.
 | Vector Store  | FAISS      |
 | Web Search    | Tavily     |
 | LLM           | Groq (Llama 3.3) |
-| UI            | Streamlit  |
+| Backend       | FastAPI    |
+| Frontend      | Next.js    |
 | Language      | Python     |
 
 ---
@@ -193,10 +194,17 @@ TAVILY_API_KEY=your_tavily_key
 pip install -r requirements.txt
 ```
 
-### Run the App
+### Run the Backend
 
 ```powershell
-streamlit run app.py
+uvicorn backend:app --reload --port 8000
+```
+
+### Run the Frontend
+
+```powershell
+cd frontend
+npm run dev
 ```
 
 On first run:
@@ -210,8 +218,9 @@ On first run:
 
 ```
 .
-├── app.py                     # Streamlit UI that invokes the LangGraph workflow
+├── backend.py                 # FastAPI backend entry point
 ├── requirements.txt           # Python dependencies
+├── frontend/                  # Next.js frontend application
 ├── src/
 │   ├── graphs/graph_builder.py  # FAISS index + retriever setup
 │   ├── llms/llm.py              # RAG prompt and LLM chain
@@ -220,15 +229,13 @@ On first run:
 └── data/faiss_index/          # Vectorstore cache (created at runtime)
 ```
 
-## 🚀 Deploy to Hugging Face Spaces
+## 🚀 Deployment
 
-1. Create a new Space: choose SDK "Streamlit".
-2. Push this repository to the Space (or connect via GitHub).
-3. In the Space Settings → Secrets, add:
-  - `GROQ_API_KEY`: your Groq key
-  - `TAVILY_API_KEY`: your Tavily key
-4. The app auto-builds using `requirements.txt` and runs `app.py`.
-5. Optional: users can also paste keys in the sidebar if Secrets are not set.
+The project is structured to be deployed as a decoupled application:
+1. **Backend**: FastAPI can be containerized using a `Dockerfile` and deployed to platforms like Render, AWS, or Hugging Face Spaces (Docker SDK).
+2. **Frontend**: The Next.js app can be deployed to Vercel or similar static hosting platforms.
+
+Note: Ensure `NEXT_PUBLIC_API_BASE_URL` in the frontend reflects your production backend URL.
 
 Notes:
 - First run may build a FAISS index and cache under `src/data/faiss_index/`.
