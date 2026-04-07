@@ -67,10 +67,10 @@ function MessageRow({
     <div className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[min(780px,90%)] rounded-2xl px-4 py-3 text-[15px] leading-7 shadow-sm",
+          "max-w-[min(780px,90%)] text-[15px] leading-7",
           isUser
-            ? "bg-[#2563eb] text-white"
-            : "border border-white/10 bg-white/5 text-white/90"
+            ? "rounded-2xl px-4 py-3 shadow-sm bg-[#2563eb] text-white"
+            : "py-3 text-white/90"
         )}
       >
         {isUser ? (
@@ -193,20 +193,74 @@ export function AnimatedAIChat() {
     resize(true);
 
     try {
-      const data = await fetchJson<{ session_id?: string; answer?: string }>("/chat", {
+      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+      const response = await fetch(`${apiBaseUrl}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question, session_id: currentSessionId }),
       });
 
-      if (data.session_id && data.session_id !== currentSessionId) {
-        setCurrentSessionId(data.session_id);
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
       }
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.answer || "No answer returned." },
-      ]);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("No reader");
+
+      let done = false;
+      let streamedResponse = "";
+      let buffer = "";
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6);
+              if (dataStr === '[DONE]') {
+                done = true;
+                break;
+              }
+              try {
+                const data = JSON.parse(dataStr);
+                if (data.type === 'session_init') {
+                  if (data.session_id && data.session_id !== currentSessionId) {
+                    setCurrentSessionId(data.session_id);
+                  }
+                } else if (data.type === 'content') {
+                  streamedResponse += data.content;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    newMessages[newMessages.length - 1].content = streamedResponse;
+                    return newMessages;
+                  });
+                } else if (data.type === 'error') {
+                  setApiError(data.content);
+                }
+              } catch (e) {
+                console.error("Error parsing stream chunk", e);
+              }
+            }
+          }
+        }
+      }
+
+      if (!streamedResponse) {
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = "No answer returned.";
+          return newMessages;
+        });
+      }
       await loadSessions();
     } catch (error) {
       setApiError(error instanceof Error ? error.message : "Unexpected API error");

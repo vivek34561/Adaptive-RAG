@@ -10,6 +10,9 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+import json
+import asyncio
 from pydantic import BaseModel, Field
 
 from src.storage.chat_store import (
@@ -425,3 +428,121 @@ def chat(payload: ChatRequest) -> ChatResponse:
         escalated=escalated,
         escalation_reason=escalation_reason,
     )
+
+@app.post("/chat/stream")
+async def chat_stream(payload: ChatRequest):
+    use_memory_store = False
+    try:
+        if payload.session_id:
+            session_id = payload.session_id
+        else:
+            chat_title = payload.question[:60] + ("…" if len(payload.question) > 60 else "")
+            created = create_session(chat_title)
+            session_id = created["id"]
+            groq_key = payload.groq_api_key or os.getenv("GROQ_API_KEY") or ""
+            if groq_key:
+                _rename_session_async(session_id, payload.question, groq_key, _memory_sessions)
+    except ChatStoreError:
+        use_memory_store = True
+        if payload.session_id:
+            session_id = payload.session_id
+            if session_id not in _memory_sessions:
+                _memory_sessions[session_id] = {
+                    "id": session_id,
+                    "title": payload.question[:120] if payload.question else "Recovered chat",
+                    "created_at": _now_iso(),
+                    "last_message_at": _now_iso(),
+                }
+                _memory_messages.setdefault(session_id, [])
+        else:
+            chat_title = payload.question[:60] + ("…" if len(payload.question) > 60 else "")
+            created = _create_memory_session(chat_title)
+            session_id = created["id"]
+            groq_key = payload.groq_api_key or os.getenv("GROQ_API_KEY") or ""
+            if groq_key:
+                _rename_session_async(session_id, payload.question, groq_key, _memory_sessions)
+
+    chat_history_str = ""
+    if session_id:
+        if use_memory_store:
+            history_msgs = _get_memory_messages(session_id)
+        else:
+            try:
+                history_msgs = get_messages(session_id)
+            except ChatStoreError:
+                history_msgs = _get_memory_messages(session_id)
+        
+        formatted_history = []
+        for m in history_msgs[-10:]:
+            r = m.get("role", "")
+            if r in ("user", "assistant"):
+                formatted_history.append(f"{r.capitalize()}: {m.get('content', '')}")
+        chat_history_str = "\n".join(formatted_history)
+
+    if use_memory_store:
+        _append_memory_message(session_id=session_id, role="user", content=payload.question)
+    else:
+        try:
+            append_message(session_id=session_id, role="user", content=payload.question)
+        except ChatStoreError:
+            use_memory_store = True
+            _append_memory_message(session_id=session_id, role="user", content=payload.question)
+
+    async def event_generator():
+        yield f"data: {json.dumps({'type': 'session_init', 'session_id': session_id})}\n\n"
+
+        if _is_simple_greeting(payload.question):
+            ans = "Hi! How can I help you today?"
+            yield f"data: {json.dumps({'type': 'content', 'content': ans})}\n\n"
+            if use_memory_store:
+                _append_memory_message(session_id=session_id, role="assistant", content=ans)
+            else:
+                try:
+                    append_message(session_id=session_id, role="assistant", content=ans)
+                except ChatStoreError:
+                    _append_memory_message(session_id=session_id, role="assistant", content=ans)
+            yield "data: [DONE]\n\n"
+            return
+
+        groq_api_key = payload.groq_api_key or os.getenv("GROQ_API_KEY")
+        if not groq_api_key:
+            yield f"data: {json.dumps({'type': 'error', 'content': 'Missing API key.'})}\n\n"
+            return
+            
+        full_answer = ""
+        try:
+            async for event in state.app.astream_events(
+                {
+                    "question": payload.question,
+                    "chat_history": chat_history_str,
+                    "groq_api_key": groq_api_key,
+                    "retrieval_attempts": 0,
+                    "generation_attempts": 0,
+                    "escalated": False,
+                    "escalation_reason": "",
+                },
+                version="v1"
+            ):
+                if event["event"] == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"].content
+                    if chunk:
+                        full_answer += chunk
+                        yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+                        await asyncio.sleep(0.03)
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            
+        if not full_answer:
+            full_answer = "No answer returned."
+            
+        if use_memory_store:
+            _append_memory_message(session_id=session_id, role="assistant", content=full_answer)
+        else:
+            try:
+                append_message(session_id=session_id, role="assistant", content=full_answer)
+            except ChatStoreError:
+                _append_memory_message(session_id=session_id, role="assistant", content=full_answer)
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
