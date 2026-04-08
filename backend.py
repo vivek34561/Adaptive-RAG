@@ -370,8 +370,11 @@ def chat(payload: ChatRequest) -> ChatResponse:
 
     execution_buffer = io.StringIO()
     try:
+        from src.states import state
+        # Ensure it's imported correctly
+        _rag_app_cache = state.app
         with redirect_stdout(execution_buffer):
-            result = _get_rag_app().invoke(
+            result = _rag_app_cache.invoke(
                 {
                     "question": payload.question,
                     "chat_history": chat_history_str,
@@ -530,7 +533,12 @@ async def chat_stream(payload: ChatRequest):
             
         full_answer = ""
         try:
-            async for event in _get_rag_app().astream_events(
+            yield f"data: {json.dumps({'type': 'status', 'content': 'Initializing components (may take a moment)...'})}\n\n"
+            
+            from src.states import state
+            rag_app = state.app
+            
+            async for event in rag_app.astream_events(
                 {
                     "question": payload.question,
                     "chat_history": chat_history_str,

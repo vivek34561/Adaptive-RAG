@@ -7,7 +7,7 @@ from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -87,8 +87,16 @@ def _faiss_dir():
     return str(base)
 
 def build_vectorstore_with_key(groq_api_key):
-    # Set embeddings to use HuggingFace (no API key needed for embeddings)
-    embd = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    # Set embeddings to use HuggingFace Endpoint (no local PyTorch required)
+    hf_token = os.getenv("HF_TOKEN")
+    if not hf_token:
+        raise ValueError("HF_TOKEN environment variable is required for embeddings.")
+    
+    embd = HuggingFaceEndpointEmbeddings(
+        model=EMBEDDING_MODEL,
+        task="feature-extraction",
+        huggingfacehub_api_token=hf_token,
+    )
 
     # Docs to index
     urls = INDEX_SOURCE_URLS
