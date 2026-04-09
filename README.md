@@ -14,8 +14,18 @@ pinned: false
   <img src="https://img.shields.io/badge/LangGraph-0.2+-green.svg" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/LangChain-0.3+-yellow.svg" alt="LangChain"/>
   <img src="https://img.shields.io/badge/FastAPI-0.110+-009688.svg" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/Next.js-15-black.svg" alt="Next.js"/>
+  <img src="https://img.shields.io/badge/Next.js-16-black.svg" alt="Next.js"/>
+  <img src="https://img.shields.io/badge/Docker-ready-2496ED.svg?logo=docker" alt="Docker"/>
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"/>
+</p>
+
+<p align="center">
+  <a href="https://hub.docker.com/r/vivek3242/adaptive-rag-backend">
+    <img src="https://img.shields.io/docker/pulls/vivek3242/adaptive-rag-backend?label=backend%20pulls&logo=docker" alt="Docker Backend Pulls"/>
+  </a>
+  <a href="https://hub.docker.com/r/vivek3242/adaptive-rag-frontend">
+    <img src="https://img.shields.io/docker/pulls/vivek3242/adaptive-rag-frontend?label=frontend%20pulls&logo=docker" alt="Docker Frontend Pulls"/>
+  </a>
 </p>
 
 <p align="center">
@@ -27,6 +37,7 @@ pinned: false
   <a href="#-architecture">🏗️ Architecture</a> •
   <a href="#-tech-stack">🛠️ Tech Stack</a> •
   <a href="#-quick-start">🚀 Quick Start</a> •
+  <a href="#-docker">🐳 Docker</a> •
   <a href="#-deployment">☁️ Deployment</a> •
   <a href="#-project-structure">📂 Project Structure</a>
 </p>
@@ -82,6 +93,7 @@ LangGraph is ideal for building **conditional, feedback-driven RAG workflows** i
 - **Chat Persistence** — Full conversation history stored in Supabase (PostgreSQL) with in-memory fallback
 - **Session Management** — LLM-generated chat titles, per-session message history, sidebar navigation
 - **Graph-based Control Flow** — LangGraph manages explicit state, conditional edges, and retry loops
+- **Fully Dockerized** — Backend and frontend images published to Docker Hub with CI/CD on every push
 
 ---
 
@@ -156,8 +168,10 @@ User Query
 | Embedding Model   | `sentence-transformers/all-MiniLM-L6-v2` (via HuggingFace Inference API — no local PyTorch) |
 | Vector Store      | FAISS (CPU, persisted to disk)                     |
 | Backend           | FastAPI + Uvicorn (streaming via SSE)              |
-| Frontend          | Next.js 15 (React, TypeScript, Tailwind CSS)       |
+| Frontend          | Next.js 16 (React, TypeScript, Tailwind CSS)       |
 | Chat Storage      | Supabase (PostgreSQL) + in-memory fallback         |
+| Containerization  | Docker + Docker Compose                            |
+| CI/CD             | GitHub Actions → Docker Hub                        |
 | Deployment        | Render (backend), Vercel (frontend)                |
 | Python Version    | 3.11.11                                            |
 
@@ -251,6 +265,60 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
+## 🐳 Docker
+
+Pre-built images are available on Docker Hub and updated automatically on every push to `main`.
+
+### Pull & Run
+
+```bash
+# Backend (FastAPI on port 7860)
+docker pull vivek3242/adaptive-rag-backend:latest
+docker run -p 7860:7860 \
+  -e GROQ_API_KEY=your_key \
+  -e HF_TOKEN=your_token \
+  vivek3242/adaptive-rag-backend:latest
+
+# Frontend (Next.js on port 3000)
+docker pull vivek3242/adaptive-rag-frontend:latest
+docker run -p 3000:3000 vivek3242/adaptive-rag-frontend:latest
+```
+
+### Run Full Stack Locally with Docker Compose
+
+```bash
+# Clone the repo and add your .env file, then:
+docker compose up --build
+```
+
+| Service  | URL                      |
+|----------|--------------------------|
+| Frontend | http://localhost:3000    |
+| Backend  | http://localhost:7860    |
+| Health   | http://localhost:7860/health |
+
+```bash
+# Run in background
+docker compose up -d --build
+
+# View logs
+docker compose logs -f
+
+# Stop everything
+docker compose down
+```
+
+### Docker Hub Repositories
+
+| Image | Link |
+|-------|------|
+| Backend | [vivek3242/adaptive-rag-backend](https://hub.docker.com/r/vivek3242/adaptive-rag-backend) |
+| Frontend | [vivek3242/adaptive-rag-frontend](https://hub.docker.com/r/vivek3242/adaptive-rag-frontend) |
+
+> Images are tagged with both `:latest` and `:<commit-sha>` for easy rollbacks.
+
+---
+
 ## ☁️ Deployment
 
 ### Backend → Render
@@ -268,7 +336,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `DATABASE_URL` | your Supabase URL |
 | `TAVILY_API_KEY` | your key (optional) |
 
-> ⚠️ **Free tier note:** Render free tier spins services down after 15 min of inactivity. Cold start takes ~2 min. Consider upgrading to Starter ($7/mo) for always-on.
+> ⚠️ **Free tier note:** Render free tier spins services down after 15 min of inactivity. Cold start takes ~2 min.
 
 ### Frontend → Vercel
 
@@ -280,6 +348,19 @@ Open [http://localhost:3000](http://localhost:3000).
 |-----|-------|
 | `NEXT_PUBLIC_API_BASE_URL` | `https://your-backend.onrender.com` |
 
+### CI/CD — GitHub Actions → Docker Hub
+
+On every push to `main`, the workflow automatically:
+1. Builds the backend Docker image → pushes `vivek3242/adaptive-rag-backend:latest`
+2. Builds the frontend Docker image → pushes `vivek3242/adaptive-rag-frontend:latest`
+
+**Required GitHub Secrets:**
+
+| Secret | Value |
+|--------|-------|
+| `DOCKERHUB_TOKEN` | Docker Hub access token (Read & Write) |
+| `NEXT_PUBLIC_API_BASE_URL` | Your Render backend URL |
+
 ---
 
 ## 📂 Project Structure
@@ -289,6 +370,9 @@ Adaptive-RAG/
 ├── backend.py                        # FastAPI app — all API endpoints + SSE streaming
 ├── requirements.txt                  # Python dependencies (no PyTorch!)
 ├── runtime.txt                       # Python 3.11.11 for Render
+├── Dockerfile                        # Backend Docker image (port 7860)
+├── docker-compose.yml                # Full-stack local dev (backend + frontend)
+├── .dockerignore                     # Excludes venvs, secrets from backend image
 ├── .env                              # Local secrets (not committed)
 │
 ├── src/
@@ -306,6 +390,8 @@ Adaptive-RAG/
 │       └── faiss_index/              # Vectorstore cache (auto-created at runtime)
 │
 ├── frontend/
+│   ├── Dockerfile                    # Frontend Docker image (multi-stage, Next.js standalone)
+│   ├── .dockerignore                 # Excludes node_modules from build context
 │   ├── src/
 │   │   ├── app/                      # Next.js App Router pages
 │   │   └── components/ui/
@@ -314,7 +400,7 @@ Adaptive-RAG/
 │   └── package.json
 │
 ├── documents/                        # Drop PDFs here to add to the knowledge base
-└── .github/workflows/main.yaml       # CI/CD → auto-deploy to HuggingFace Spaces
+└── .github/workflows/main.yaml       # CI/CD → builds & pushes Docker images to Docker Hub
 ```
 
 ---
@@ -328,6 +414,7 @@ Adaptive-RAG/
 | **Production patterns** | Lazy loading, startup warmup, in-memory fallback, graceful error handling |
 | **No local PyTorch** | Embeddings use HuggingFace Inference API — lightweight, deployable on free tier |
 | **Persistent history** | Supabase-backed chat sessions with automatic LLM-generated titles |
+| **Fully Dockerized** | Multi-stage builds, Docker Hub CI/CD, docker-compose for local dev |
 
 This is the kind of RAG system used in enterprise knowledge assistants, AI support bots, and research copilots.
 
@@ -355,6 +442,5 @@ AI Engineering Student | GenAI & Agentic Systems Builder
 ---
 
 ## 📄 License
-
 
 MIT License © 2025 Vivek Kumar Gupta
