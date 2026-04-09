@@ -14,11 +14,25 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+
+      - name: Setup Git LFS
+        run: git lfs install
+
+      - name: Validate HF_TOKEN
+        run: |
+          if [ -z "${{ secrets.HF_TOKEN }}" ]; then
+            echo "ERROR: HF_TOKEN secret is not set. Please add it in GitHub repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "HF_TOKEN is set."
+
       - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
+          # Strip any accidental whitespace/newlines from token
           CLEAN_TOKEN=$(echo -n "$HF_TOKEN" | tr -d '[:space:]')
-          git push "https://vivek231:${CLEAN_TOKEN}@huggingface.co/spaces/vivek231/Adaptive-Rag" main --force
+          # Use 'user' as the username — HF accepts any non-empty username when authenticating via token
+          git push "https://user:${CLEAN_TOKEN}@huggingface.co/spaces/vivek231/Adaptive-Rag" HEAD:main --force
