@@ -1,12 +1,3 @@
----
-title: Adaptive RAG Chat
-emoji: 🧠
-colorFrom: yellow
-colorTo: red
-sdk: docker
-pinned: false
----
-
 # 🚀 Adaptive-RAG – Intelligent Retrieval-Augmented Generation System
 
 <p align="center">
