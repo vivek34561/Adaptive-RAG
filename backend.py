@@ -84,10 +84,38 @@ def _rename_session_async(
 
     threading.Thread(target=_worker, daemon=True).start()
 
+from contextlib import asynccontextmanager
+
+def _background_warmup():
+    """Pre-warm the RAG app and vectorstore in a background thread on startup."""
+    try:
+        import os
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            print("---WARMUP: Loading RAG app and vectorstore...---")
+            from src.states import state as _state_mod
+            _ = _state_mod.app
+            # Also pre-build the vectorstore
+            from src.graphs.graph_builder import get_retriever
+            _ = get_retriever(groq_key)
+            print("---WARMUP: Done. Backend ready.---")
+        else:
+            print("---WARMUP: GROQ_API_KEY not set, skipping vectorstore pre-warm.---")
+    except Exception as exc:
+        print(f"---WARMUP ERROR (non-fatal): {exc}---")
+
+@asynccontextmanager
+async def lifespan(app_instance):
+    # Start background warmup thread so port binds immediately
+    warmup_thread = threading.Thread(target=_background_warmup, daemon=True)
+    warmup_thread.start()
+    yield
+
 app = FastAPI(
     title="Adaptive RAG Backend",
     description="FastAPI backend for the Adaptive RAG workflow",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
