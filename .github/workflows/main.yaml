@@ -18,13 +18,38 @@ jobs:
       - name: Setup Git LFS
         run: git lfs install
 
-      - name: Validate HF_TOKEN
+      - name: Debug - Verify HF token and Space access
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          if [ -z "${{ secrets.HF_TOKEN }}" ]; then
-            echo "ERROR: HF_TOKEN secret is not set. Please add it in GitHub repo Settings > Secrets and variables > Actions."
+          if [ -z "$HF_TOKEN" ]; then
+            echo "ERROR: HF_TOKEN secret is not set."
             exit 1
           fi
-          echo "HF_TOKEN is set."
+          echo "HF_TOKEN is set (length: ${#HF_TOKEN})"
+          CLEAN_TOKEN=$(echo -n "$HF_TOKEN" | tr -d '[:space:]')
+          echo "Clean token length: ${#CLEAN_TOKEN}"
+
+          # Verify the Space exists and token has write access via API
+          echo "Checking HF Space API access..."
+          HTTP_STATUS=$(curl -s -o /tmp/hf_response.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${CLEAN_TOKEN}" \
+            "https://huggingface.co/api/spaces/vivek231/Adaptive-Rag")
+          echo "HTTP Status: $HTTP_STATUS"
+          cat /tmp/hf_response.txt | head -c 500
+          echo ""
+
+          if [ "$HTTP_STATUS" = "404" ]; then
+            echo "ERROR: Space 'vivek231/Adaptive-Rag' not found. Check if the Space name is correct (case-sensitive)."
+            exit 1
+          elif [ "$HTTP_STATUS" = "401" ]; then
+            echo "ERROR: Token is invalid or expired."
+            exit 1
+          elif [ "$HTTP_STATUS" = "403" ]; then
+            echo "ERROR: Token does not have permission to access this Space. Make sure it is a WRITE token."
+            exit 1
+          fi
+          echo "Space access verified successfully."
 
       - name: Push to Hugging Face Space
         env:
@@ -32,7 +57,7 @@ jobs:
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          # Strip any accidental whitespace/newlines from token
           CLEAN_TOKEN=$(echo -n "$HF_TOKEN" | tr -d '[:space:]')
-          # Use 'user' as the username — HF accepts any non-empty username when authenticating via token
-          git push "https://user:${CLEAN_TOKEN}@huggingface.co/spaces/vivek231/Adaptive-Rag" HEAD:main --force
+          echo "Pushing to HuggingFace Space..."
+          git push "https://user:${CLEAN_TOKEN}@huggingface.co/spaces/vivek231/Adaptive-Rag" HEAD:main --force --verbose 2>&1
+          echo "Push completed with exit code $?"
