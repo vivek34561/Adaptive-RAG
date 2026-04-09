@@ -1,0 +1,52 @@
+# ─── docker-compose.yml ──────────────────────────────────────────────────────
+# Runs the full stack locally: FastAPI backend + Next.js frontend.
+#
+# Usage:
+#   1. Copy .env.example → .env and fill in your API keys
+#   2. docker compose up --build
+#   3. Frontend → http://localhost:3000
+#      Backend  → http://localhost:7860
+
+version: "3.9"
+
+services:
+  # ── FastAPI Backend ───────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: adaptive-rag-backend
+    ports:
+      - "7860:7860"
+    env_file:
+      - .env            # GROQ_API_KEY, HF_TOKEN, DATABASE_URL, etc.
+    volumes:
+      # Persist the FAISS vectorstore so it isn't rebuilt on every restart
+      - faiss_data:/app/src/data/faiss_index
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s   # Give warmup time
+    restart: unless-stopped
+
+  # ── Next.js Frontend ─────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Point the frontend at the backend container (Docker internal DNS)
+        # In production/Vercel this is your Render URL instead.
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:7860
+    container_name: adaptive-rag-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  faiss_data:

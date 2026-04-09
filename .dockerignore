@@ -1,0 +1,45 @@
+# ─── Root .dockerignore (for the backend image) ──────────────────────────────
+# Exclude everything that shouldn't land in the backend Docker image.
+
+# Virtual environments / Python cache
+.venv/
+my_env/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.pytest_cache/
+
+# Secrets — never bake into image; pass via env_file or env vars at runtime
+.env
+.env.*
+
+# Frontend (not needed in the backend image)
+frontend/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Editor / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Notebooks / docs
+*.ipynb
+*.md
+LICENSE
+
+# Test files
+test_*.py
+tmp_*.py
+
+# Node modules (just in case)
+node_modules/

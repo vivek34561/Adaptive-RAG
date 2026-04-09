@@ -1,0 +1,14 @@
+# ─── Frontend .dockerignore ───────────────────────────────────────────────────
+# Exclude heavy dirs from the frontend Docker build context.
+
+node_modules/
+.next/
+.env
+.env.*
+.env.local
+*.md
+.git/
+.gitignore
+.vscode/
+.idea/
+*.DS_Store
