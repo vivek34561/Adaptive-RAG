@@ -10,23 +10,24 @@ pinned: false
 # 🚀 Adaptive-RAG – Intelligent Retrieval-Augmented Generation System
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python"/>
-  <img src="https://img.shields.io/badge/LangGraph-latest-green.svg" alt="LangGraph"/>
-  <img src="https://img.shields.io/badge/LangChain-latest-yellow.svg" alt="LangChain"/>
-   <img src="https://img.shields.io/badge/FastAPI-latest-009688.svg" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/Next.js-latest-black.svg" alt="Next.js"/>
+  <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python"/>
+  <img src="https://img.shields.io/badge/LangGraph-0.2+-green.svg" alt="LangGraph"/>
+  <img src="https://img.shields.io/badge/LangChain-0.3+-yellow.svg" alt="LangChain"/>
+  <img src="https://img.shields.io/badge/FastAPI-0.110+-009688.svg" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/Next.js-15-black.svg" alt="Next.js"/>
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"/>
 </p>
 
 <p align="center">
-  <strong>An adaptive Retrieval-Augmented Generation (RAG) system that dynamically routes queries between vector search and web search for accurate, grounded answers.</strong>
+  <strong>A self-correcting Retrieval-Augmented Generation system that dynamically routes, grades, and rewrites queries for accurate, grounded answers — with a real-time streaming chat UI.</strong>
 </p>
 
 <p align="center">
   <a href="#-features">✨ Features</a> •
   <a href="#-architecture">🏗️ Architecture</a> •
+  <a href="#-tech-stack">🛠️ Tech Stack</a> •
   <a href="#-quick-start">🚀 Quick Start</a> •
-  <a href="#-how-it-works">🔬 How It Works</a> •
+  <a href="#-deployment">☁️ Deployment</a> •
   <a href="#-project-structure">📂 Project Structure</a>
 </p>
 
@@ -34,14 +35,15 @@ pinned: false
 
 ## 🎯 Overview
 
-Adaptive-RAG is a **production-oriented RAG pipeline** built using **LangChain and LangGraph** that intelligently decides **how to retrieve information** before generating an answer.
+Adaptive-RAG is a **production-grade RAG pipeline** built with **LangChain and LangGraph** that intelligently decides *how* to retrieve information before generating an answer.
 
-Instead of relying on a single data source, the system:
+Instead of blindly retrieving documents, the system:
 
-* Routes questions to a **local FAISS vectorstore** when internal knowledge is sufficient
-* Falls back to **web search (Tavily)** when information is missing or outdated
-* Grades retrieved documents and generated answers
-* Automatically **rewrites queries** when retrieval quality is poor
+- Routes queries to a **local FAISS vectorstore** for domain-specific questions
+- **Escalates to a human reviewer** when the query is out-of-scope or needs expert judgment
+- **Grades** retrieved documents for relevance before generating
+- **Rewrites queries** when retrieval quality is poor, then retries
+- **Validates answers** for hallucinations and grounding before returning
 
 This results in **more accurate, less hallucinated, and context-aware answers**.
 
@@ -50,20 +52,19 @@ This results in **more accurate, less hallucinated, and context-aware answers**.
 ## 💡 Why I Built This
 
 **The Problem:**
-Traditional RAG systems blindly retrieve documents from a vectorstore, even when:
-
-* The question is out of domain
-* Knowledge is outdated
-* Retrieval quality is poor
+Traditional RAG systems blindly retrieve from a vectorstore even when:
+- The question is out of domain
+- Knowledge is stale or missing
+- Retrieval quality is poor
 
 This leads to hallucinations or incomplete answers.
 
 **My Goal:**
 Build a **self-correcting RAG pipeline** that can:
-
-* Decide *where* to retrieve from
-* Judge *how good* the retrieval is
-* Improve itself by rewriting queries when needed
+- Decide *where* to retrieve from
+- Judge *how good* the retrieval is
+- Improve itself by rewriting queries when needed
+- Know when to escalate rather than guess
 
 **Key Learning:**
 LangGraph is ideal for building **conditional, feedback-driven RAG workflows** instead of linear chains.
@@ -72,102 +73,123 @@ LangGraph is ideal for building **conditional, feedback-driven RAG workflows** i
 
 ## ✨ Key Features
 
-* **Adaptive Routing**
-  Automatically selects between vectorstore retrieval and web search.
-
-* **Retrieval Grading**
-  Evaluates whether retrieved documents are relevant to the query.
-
-* **Hallucination Detection**
-  Grades generated answers against retrieved context.
-
-* **Query Rewriting**
-  Reformulates weak questions to improve retrieval quality.
-
-* **Graph-based Control Flow**
-  Uses LangGraph for explicit decision-making and retry loops.
-
-* **Interactive UI**
-  Modern Next.js dashboard for real-time streaming chat and visualization.
+- **Adaptive Routing** — Automatically routes between vectorstore retrieval and human escalation based on query type
+- **Retrieval Grading** — LLM-based grader evaluates whether retrieved documents are relevant
+- **Hallucination Detection** — Grades generated answers against retrieved context for factual grounding
+- **Query Rewriting** — Reformulates weak or ambiguous questions to improve retrieval quality
+- **Human Escalation** — Out-of-scope queries are escalated and logged to a reviewer queue
+- **Real-time Streaming** — SSE-based token-by-token streaming with status updates (routing, retrieving, grading, generating)
+- **Chat Persistence** — Full conversation history stored in Supabase (PostgreSQL) with in-memory fallback
+- **Session Management** — LLM-generated chat titles, per-session message history, sidebar navigation
+- **Graph-based Control Flow** — LangGraph manages explicit state, conditional edges, and retry loops
 
 ---
 
 ## 🏗️ Architecture
 
-### High-Level Workflow
+### LangGraph Workflow
 
 ```
 User Query
    │
    ▼
-Router Node
-(Vectorstore or Web?)
+┌─────────────────┐
+│  route_question │  ← llama-3.1-8b-instant decides: vectorstore or human_escalation
+└─────────────────┘
    │
-   ├──► Vectorstore Retrieval (FAISS)
+   ├──► human_escalation   ← Query logged, graceful escalation message returned
    │
-   └──► Web Search (Tavily)
-           │
-           ▼
-Document Grader
-   │
-   ├── Relevant → Answer Generator
-   │
-   └── Not Relevant → Query Rewriter
-                            │
-                            └── Loop Back to Router
+   └──► retrieve (FAISS)
+            │
+            ▼
+       grade_documents     ← Each doc scored relevant / not relevant
+            │
+            ├── All relevant → generate
+            │                     │
+            │                     ▼
+            │              grade_generation   ← Hallucination + answer quality check
+            │                     │
+            │                     ├── useful → ✅ Return answer
+            │                     ├── not useful → generate (retry)
+            │                     └── not supported → generate (retry)
+            │
+            └── None relevant
+                     │
+                     ├── retrieval_attempts < 1 → transform_query → retrieve (retry)
+                     └── retrieval_attempts ≥ 1 → human_escalation
 ```
 
-### LangGraph Advantage
+### System Architecture
 
-LangGraph enables:
+```
+┌─────────────────────┐         ┌──────────────────────────┐
+│   Next.js Frontend  │ ──SSE──►│   FastAPI Backend         │
+│  (Vercel)           │◄────────│  (Render)                │
+└─────────────────────┘         │                          │
+                                │  ┌────────────────────┐  │
+                                │  │  LangGraph RAG App  │  │
+                                │  │  (lazy-loaded)      │  │
+                                │  └────────────────────┘  │
+                                │           │              │
+                                │    ┌──────┴──────┐       │
+                                │    ▼             ▼       │
+                                │  FAISS       Groq LLM   │
+                                │  (HF API     (llama-3)  │
+                                │  embeddings)            │
+                                └──────────┬───────────────┘
+                                           │
+                                    ┌──────▼──────┐
+                                    │  Supabase   │
+                                    │ (PostgreSQL)│
+                                    └─────────────┘
+```
 
-* Conditional edges
-* Feedback loops
-* Explicit state transitions
-* Clean separation of logic
+---
+
+## 🛠️ Tech Stack
+
+| Component         | Technology                                          |
+| ----------------- | --------------------------------------------------- |
+| Orchestration     | LangGraph ≥ 0.2                                    |
+| RAG Framework     | LangChain ≥ 0.3                                    |
+| LLM               | Groq — `llama-3.1-8b-instant`                      |
+| Embedding Model   | `sentence-transformers/all-MiniLM-L6-v2` (via HuggingFace Inference API — no local PyTorch) |
+| Vector Store      | FAISS (CPU, persisted to disk)                     |
+| Backend           | FastAPI + Uvicorn (streaming via SSE)              |
+| Frontend          | Next.js 15 (React, TypeScript, Tailwind CSS)       |
+| Chat Storage      | Supabase (PostgreSQL) + in-memory fallback         |
+| Deployment        | Render (backend), Vercel (frontend)                |
+| Python Version    | 3.11.11                                            |
 
 ---
 
 ## 🔬 How It Works
 
 ### 1. Routing
-
-A router node decides whether the query should go to:
-
-* **Vectorstore** (domain-specific questions)
-* **Web Search** (open-ended or current topics)
+The `route_question` node uses `llama-3.1-8b-instant` with structured output to decide:
+- **`vectorstore`** — domain questions about AI agents, prompt engineering, adversarial attacks
+- **`human_escalation`** — off-topic, policy-sensitive, or time-sensitive queries
 
 ### 2. Retrieval
+- FAISS vectorstore is built from web URLs + local PDFs on startup
+- Embeddings are generated via **HuggingFace Inference API** (`all-MiniLM-L6-v2`) — no PyTorch required
+- The index is cached to disk and reused across restarts
 
-* Vectorstore uses **FAISS embeddings**
-* Web search uses **Tavily API**
+### 3. Document Grading
+Each retrieved document is scored `yes/no` for relevance to the question. Irrelevant documents are filtered out.
 
-### 3. Grading
+### 4. Generation
+Relevant context + chat history are passed to the RAG chain (`llama-3.1-8b-instant`) for answer generation.
 
-LLM-based graders check:
+### 5. Answer Validation
+The generated answer is checked for:
+- **Hallucinations** — is it grounded in the retrieved documents?
+- **Adequacy** — does it actually address the question?
 
-* Document relevance
-* Answer grounding
-* Hallucination risk
+If either check fails, the system retries or escalates.
 
-### 4. Query Rewriting
-
-If retrieval is weak, the query is rewritten and re-routed automatically.
-
----
-
-## 🛠️ Tech Stack
-
-| Component     | Technology |
-| ------------- | ---------- |
-| Orchestration | LangGraph  |
-| RAG Framework | LangChain  |
-| Vector Store  | FAISS      |
-| Web Search    | Tavily     |
-| LLM           | Groq (Llama 3.3) |
-| Backend       | FastAPI    |
-| Frontend      | Next.js    |
-| Language      | Python     |
+### 6. Streaming
+The backend streams status updates and answer tokens via **Server-Sent Events (SSE)**. The frontend renders tokens word-by-word as they arrive.
 
 ---
 
@@ -175,113 +197,163 @@ If retrieval is weak, the query is rewritten and re-routed automatically.
 
 ### Prerequisites
 
-* Python 3.10+
-* Groq API key
-* Tavily API key
+- Python 3.11+
+- Node.js 18+
+- [Groq API key](https://console.groq.com) (free)
+- [HuggingFace token](https://huggingface.co/settings/tokens) (free, for embeddings API)
+- Supabase project (optional — falls back to in-memory storage)
 
-### Environment Setup
+### 1. Clone & Setup
 
-Create a `.env` file:
-
+```bash
+git clone https://github.com/vivek34561/Adaptive-RAG.git
+cd Adaptive-RAG
 ```
-GROQ_API_KEY=your_groq_key
-TAVILY_API_KEY=your_tavily_key
+
+### 2. Create `.env`
+
+```env
+GROQ_API_KEY=your_groq_api_key
+HF_TOKEN=your_huggingface_token
+TAVILY_API_KEY=your_tavily_key          # optional
+LANGCHAIN_API_KEY=your_langsmith_key    # optional, for tracing
+DATABASE_URL=your_supabase_postgres_url # optional, falls back to in-memory
 ```
 
-### Install Dependencies
+### 3. Install Backend Dependencies
 
-```powershell
+```bash
 pip install -r requirements.txt
 ```
 
-### Run the Backend
+### 4. Run Backend
 
-```powershell
+```bash
 uvicorn backend:app --reload --port 8000
 ```
 
-### Run the Frontend
+On startup, the server:
+1. Binds to port immediately (no startup delay)
+2. Kicks off a **background warmup** — builds/loads the FAISS index
+3. Logs `---WARMUP: Done. Backend ready.---` when ready
 
-```powershell
+### 5. Run Frontend
+
+```bash
 cd frontend
+npm install
 npm run dev
 ```
 
-On first run:
+Set `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000` in `frontend/.env.local`.
 
-* A FAISS index is built
-* Cached under `data/index/faiss_index`
+Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## 📂 Project Structure (this repo)
+## ☁️ Deployment
+
+### Backend → Render
+
+1. Push code to GitHub
+2. Create a new **Web Service** on [Render](https://render.com)
+3. Set **Start Command**: `uvicorn backend:app --host 0.0.0.0 --port $PORT`
+4. Set **Python Version**: `3.11.11` (via `runtime.txt`)
+5. Add all environment variables under **Environment**:
+
+| Key | Value |
+|-----|-------|
+| `GROQ_API_KEY` | your key |
+| `HF_TOKEN` | your key |
+| `DATABASE_URL` | your Supabase URL |
+| `TAVILY_API_KEY` | your key (optional) |
+
+> ⚠️ **Free tier note:** Render free tier spins services down after 15 min of inactivity. Cold start takes ~2 min. Consider upgrading to Starter ($7/mo) for always-on.
+
+### Frontend → Vercel
+
+1. Connect your GitHub repo to [Vercel](https://vercel.com)
+2. Set **Root Directory** to `frontend`
+3. Add environment variable:
+
+| Key | Value |
+|-----|-------|
+| `NEXT_PUBLIC_API_BASE_URL` | `https://your-backend.onrender.com` |
+
+---
+
+## 📂 Project Structure
 
 ```
-.
-├── backend.py                 # FastAPI backend entry point
-├── requirements.txt           # Python dependencies
-├── frontend/                  # Next.js frontend application
+Adaptive-RAG/
+├── backend.py                        # FastAPI app — all API endpoints + SSE streaming
+├── requirements.txt                  # Python dependencies (no PyTorch!)
+├── runtime.txt                       # Python 3.11.11 for Render
+├── .env                              # Local secrets (not committed)
+│
 ├── src/
-│   ├── graphs/graph_builder.py  # FAISS index + retriever setup
-│   ├── llms/llm.py              # RAG prompt and LLM chain
-│   ├── nodes/node_implementation.py # Router, retrieve, web_search, graders, transform
-│   └── states/state.py          # Graph state + compile (app)
-└── data/faiss_index/          # Vectorstore cache (created at runtime)
+│   ├── graphs/
+│   │   └── graph_builder.py          # FAISS index builder + HuggingFace API embeddings
+│   ├── llms/
+│   │   └── llm.py                    # RAG prompt template + Groq LLM chain
+│   ├── nodes/
+│   │   └── node_implementation.py    # All graph nodes: route, retrieve, grade, generate, escalate
+│   ├── states/
+│   │   └── state.py                  # LangGraph state schema + compiled app
+│   ├── storage/
+│   │   └── chat_store.py             # Supabase session/message persistence
+│   └── data/
+│       └── faiss_index/              # Vectorstore cache (auto-created at runtime)
+│
+├── frontend/
+│   ├── src/
+│   │   ├── app/                      # Next.js App Router pages
+│   │   └── components/ui/
+│   │       └── animated-ai-chat.tsx  # Main chat UI with sidebar + streaming
+│   ├── .env.local                    # Frontend env (NEXT_PUBLIC_API_BASE_URL)
+│   └── package.json
+│
+├── documents/                        # Drop PDFs here to add to the knowledge base
+└── .github/workflows/main.yaml       # CI/CD → auto-deploy to HuggingFace Spaces
 ```
-
-## 🚀 Deployment
-
-The project is structured to be deployed as a decoupled application:
-1. **Backend**: FastAPI can be containerized using a `Dockerfile` and deployed to platforms like Render, AWS, or Hugging Face Spaces (Docker SDK).
-2. **Frontend**: The Next.js app can be deployed to Vercel or similar static hosting platforms.
-
-Note: Ensure `NEXT_PUBLIC_API_BASE_URL` in the frontend reflects your production backend URL.
-
-Notes:
-- First run may build a FAISS index and cache under `src/data/faiss_index/`.
-- If web search is disabled (missing Tavily key), queries will route to the vectorstore.
 
 ---
 
-## 📊 What Makes This Project Strong
+## 📊 What Makes This Project Stand Out
 
-* Not a basic RAG demo
-* Uses **decision-making and self-correction**
-* Demonstrates **real LangGraph value**
-* Clean separation of concerns
-* Directly aligned with **industry GenAI systems**
+| Aspect | Detail |
+|--------|--------|
+| **Self-correcting** | Not a linear chain — the graph retries, rewrites, and escalates |
+| **Streaming UX** | Real-time status + token streaming via SSE |
+| **Production patterns** | Lazy loading, startup warmup, in-memory fallback, graceful error handling |
+| **No local PyTorch** | Embeddings use HuggingFace Inference API — lightweight, deployable on free tier |
+| **Persistent history** | Supabase-backed chat sessions with automatic LLM-generated titles |
 
-This is the kind of RAG system used in:
-
-* Enterprise knowledge assistants
-* AI support bots
-* Research copilots
-* Internal search tools
+This is the kind of RAG system used in enterprise knowledge assistants, AI support bots, and research copilots.
 
 ---
 
 ## 🔮 Future Improvements
 
-* Multi-vector routing (code, docs, FAQs)
-* Tool-augmented RAG
-* Caching and latency optimization
-* Confidence-based answer refusal
-* Evaluation dashboards
+- [ ] Multi-document upload via UI
+- [ ] Tool-augmented RAG (calculator, code interpreter)
+- [ ] Evaluation dashboard with RAGAS metrics
+- [ ] Confidence-based answer refusal
+- [ ] Support for multiple knowledge domains with separate vectorstores
 
 ---
 
 ## 👨‍💻 Author
 
-**Vivek Kumar Gupta**
+**Vivek Kumar Gupta**  
 AI Engineering Student | GenAI & Agentic Systems Builder
 
-* GitHub: [https://github.com/vivek34561](https://github.com/vivek34561)
-* LinkedIn: [https://linkedin.com/in/vivek-gupta-0400452b6](https://linkedin.com/in/vivek-gupta-0400452b6)
-* Portfolio: [https://resume-sepia-seven.vercel.app/](https://resume-sepia-seven.vercel.app/)
+- GitHub: [github.com/vivek34561](https://github.com/vivek34561)
+- LinkedIn: [linkedin.com/in/vivek-gupta-0400452b6](https://linkedin.com/in/vivek-gupta-0400452b6)
+- Portfolio: [resume-sepia-seven.vercel.app](https://resume-sepia-seven.vercel.app/)
 
 ---
 
 ## 📄 License
 
 MIT License © 2025 Vivek Kumar Gupta
-
