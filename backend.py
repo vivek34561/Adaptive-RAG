@@ -43,24 +43,24 @@ load_dotenv()
 
 
 def _generate_title_with_llm(question: str, groq_api_key: str) -> str:
-    """Call Groq LLM to produce a concise ≤6-word chat title."""
+    """Call Groq LLM to produce a concise ≤8-word chat title (fallback: first 40 chars of the question)."""
     try:
         from langchain_groq import ChatGroq
         llm = ChatGroq(
             model="openai/gpt-oss-20b",
             temperature=0,
             groq_api_key=groq_api_key,
-            max_tokens=20,
+            max_tokens=30,
         )
         prompt = (
-            "Generate a concise chat title (maximum 6 words, no quotes, no punctuation at the end) "
+            "Generate a concise chat title (maximum 8 words, no quotes, no punctuation at the end) "
             f"that summarises this question: {question}"
         )
         response = llm.invoke(prompt)
-        title = response.content.strip().strip('"').strip("'")[:80]
-        return title if title else question[:60]
+        title = response.content.strip().strip('"').strip("'")[:60]
+        return title if title else question[:40]
     except Exception:
-        return question[:60] + ("…" if len(question) > 60 else "")
+        return question[:40] + ("…" if len(question) > 40 else "")
 
 
 def _rename_session_async(
