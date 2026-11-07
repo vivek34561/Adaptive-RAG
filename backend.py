@@ -15,7 +15,6 @@ import json
 import asyncio
 from pydantic import BaseModel, Field
 
-from src.api.stats import router as stats_router
 from src.storage.chat_store import (
     ChatStoreError,
     append_message,
@@ -126,9 +125,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.include_router(stats_router)
-
 
 _memory_sessions: dict[str, dict[str, Any]] = {}
 _memory_messages: dict[str, list[dict[str, Any]]] = {}
