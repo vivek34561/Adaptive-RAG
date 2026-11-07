@@ -132,7 +132,7 @@ _memory_messages: dict[str, list[dict[str, Any]]] = {}
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _create_memory_session(title: str) -> dict[str, Any]:
