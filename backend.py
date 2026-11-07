@@ -225,7 +225,8 @@ class CreateSessionRequest(BaseModel):
 
 def _is_simple_greeting(text: str) -> bool:
     normalized = re.sub(r"[^a-z]", "", text.lower())
-    return normalized in {"hi", "hello", "hey", "hola", "namaste"}
+    greetings = {"hi", "hello", "hey", "hola", "namaste", "hii", "heya", "yo", "sup"}
+    return normalized in greetings
 
 
 @app.get("/")
